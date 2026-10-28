@@ -2,6 +2,10 @@
 
 Automatically preview image files dropped into herdr panes on macOS.
 
+![Illustrated demo: drag an image into a herdr pane and its preview opens automatically](docs/spring-load-demo.gif)
+
+*Illustrated demo of the drag-to-preview flow.*
+
 It also works in agent TUIs such as Claude Code, which swap a dropped image
 for an `[Image #1]` placeholder: the dropped file is taken from the macOS drag
 itself, not parsed out of the pane. The preview is a herdr popup that draws
