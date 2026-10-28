@@ -1,4 +1,4 @@
-# herdr-image-drop
+# herdr-spring-load
 
 Drag an image file onto a herdr pane and a preview opens on its own.
 
