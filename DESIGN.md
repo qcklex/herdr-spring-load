@@ -1,4 +1,9 @@
 # herdr-image-drop: design
+
+This is the design note written before the code. One change since: the shipped helper also
+confirms the drop in herdr's focused pane before opening the popup, and uses Quick Look otherwise.
+The README section "How it works" describes the current behaviour.
+
 Goal: when an image file is dragged onto a herdr pane in Ghostty, a preview opens on its own.
 
 ## 1. What herdr 0.9.3 gives us (checked against `herdr api schema --json`)
@@ -19,7 +24,7 @@ Goal: when an image file is dragged onto a herdr pane in Ghostty, a preview open
   `herdr plugin pane open --plugin <id> --entrypoint viewer --env IMAGE=<path>` (`ui_busy` if a modal is open).
 - Pane graphics: apps write Kitty graphics to their own pane; herdr forwards them (`pane.graphics.*` is gone).
 
-## 2. Prior art (cloned to scratchpad/vet/, read)
+## 2. Prior art (read before writing this)
 
 None of them auto-opens an image when its path is dropped.
 - ecylmz/herdr-drop: closest. Drop, then press a key; it reads the path off the prompt (`pick_path`:
@@ -31,16 +36,16 @@ None of them auto-opens an image when its path is dropped.
 - walid-mos/herdr-focus-pane: a native macOS helper (Swift LaunchAgent) that watches Ghostty drags so the
   drop lands in the pane under the cursor. It shows that detecting the drag natively works, but it opens nothing.
 
-## 3. Alex's terminal
+## 3. Target terminal
 
-Ghostty (pid 665; no iTerm2 or Terminal.app running). It supports Kitty graphics and herdr has
+Ghostty. It supports Kitty graphics and herdr has
 `kitty_graphics = true`, so an in-herdr popup can draw the image. Ghostty pastes a drop as a
 shell-escaped path (backslash before spaces); multiple files arrive space-separated.
 
 ## 4. Why not watch pane output
 
 Checked and rejected as the primary mechanism:
-- Inconsistent in the main use case (both confirmed by Alex's screenshots, 2026-10-28). In Claude Code a
+- Inconsistent in the main use case (both observed on 2026-10-28). In Claude Code a
   dropped PNG/JPG becomes `[Image #N]`, so the path never shows. A dropped HEIC (the iPhone default) stays
   as the plain path. Scraping would work for HEIC only; apps that don't echo input (vim, less) hide both.
 - Cost. One `pane.output_matched` subscription per pane (59+ now), re-subscribed on pane
@@ -52,7 +57,7 @@ Checked and rejected as the primary mechanism:
 
 Two parts in one repo.
 A. `image-drop-watch`: a small native macOS helper (Swift, about 150 lines, run as a LaunchAgent the way
-   herdr-focus-pane does it; Alex installs it). It needs no Accessibility or Input Monitoring permission:
+   herdr-focus-pane does it; the user installs it). It needs no Accessibility or Input Monitoring permission:
    1. Poll `NSPasteboard(name: .drag).changeCount` every 100 ms. On a change, read
       `readObjects(forClasses: [NSURL], options: [.urlReadingFileURLsOnly: true])` and keep files whose UTType
       conforms to `public.image` (png, jpg, gif, heic, webp, tiff, bmp). Ignore drags with no images.
@@ -116,4 +121,4 @@ non-herdr Ghostty window): `qlmanage -p <file>` (Quick Look, transient). A confi
 
 `plugin link` is global to the user across all sessions, so do not link it during development. Test
 viewer.py by running it directly in a scratch Ghostty tab outside herdr (Ghostty draws Kitty graphics itself),
-and test the helper with `viewer = "quicklook"`. Alex runs `herdr plugin link` himself when ready.
+and test the helper with `viewer = "quicklook"`. Link it yourself when you are ready.
