@@ -44,6 +44,18 @@ def requested_paths(environ: Dict[str, str]) -> List[str]:
     return [single] if single else []
 
 
+def display_safe(text: str) -> str:
+    """Make untrusted text (file names, error messages) safe to print.
+
+    macOS file names may contain ESC, BEL and other control characters; a
+    name with an OSC sequence would otherwise reach the terminal. C0, DEL and
+    C1 controls are shown as visible \\xNN escapes instead.
+    """
+    return "".join(
+        "\\x%02x" % ord(c) if ord(c) < 0x20 or 0x7F <= ord(c) <= 0x9F else c for c in text
+    )
+
+
 def record_last(paths: List[str]) -> None:
     state_dir = os.environ.get("HERDR_PLUGIN_STATE_DIR")
     if not state_dir or not paths:
@@ -154,14 +166,14 @@ class Viewer:
             detail = "%dx%d" % (w, h)
         else:
             out.append("\x1b[%d;1H" % max(1, area_rows // 2))
-            out.append(("cannot show image: %s" % item)[:cols])
+            out.append(("cannot show image: %s" % display_safe(str(item)))[:cols])
             detail = "error"
         out.append("\x1b[%d;1H\x1b[2K" % rows)
         out.append(self.footer(detail, cols))
         os.write(sys.stdout.fileno(), "".join(out).encode("utf-8", "replace"))
 
     def footer(self, detail: str, cols: int) -> str:
-        name = os.path.basename(self.paths[self.index])
+        name = display_safe(os.path.basename(self.paths[self.index]))
         parts = [name, detail]
         if len(self.paths) > 1:
             parts.append("%d/%d" % (self.index + 1, len(self.paths)))

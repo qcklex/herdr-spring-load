@@ -52,14 +52,28 @@ def open_popup(paths: Sequence[str]) -> bool:
 
 
 def open_quicklook(paths: Sequence[str]) -> None:
-    # qlmanage blocks until the panel closes, so do not wait for it.
-    subprocess.Popen(
+    """Show Quick Look and wait until its panel closes.
+
+    herdr requires plugin commands to stop their background processes before
+    they exit, so qlmanage stays a child of this command and is stopped if
+    the command is interrupted.
+    """
+    process = subprocess.Popen(
         ["qlmanage", "-p", *paths],
         stdin=subprocess.DEVNULL,
         stdout=subprocess.DEVNULL,
         stderr=subprocess.DEVNULL,
-        start_new_session=True,
     )
+    try:
+        process.wait()
+    finally:
+        if process.poll() is None:
+            process.terminate()
+            try:
+                process.wait(timeout=2)
+            except subprocess.TimeoutExpired:
+                process.kill()
+                process.wait()
 
 
 def open_preview(paths: Sequence[str]) -> None:

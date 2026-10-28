@@ -18,7 +18,7 @@ herdr=$(command -v herdr || true)
 [ -n "$herdr" ] || { echo "herdr not found on PATH" >&2; exit 1; }
 
 mkdir -p "$support" "$HOME/Library/LaunchAgents" "$HOME/Library/Logs"
-swiftc -O "$here/ImageDropWatch.swift" -o "$bin"
+swiftc -O "$here/DropLogic.swift" "$here/main.swift" -o "$bin"
 
 extra=""
 while [ $# -gt 0 ]; do
@@ -50,7 +50,7 @@ $extra  </array>
   <key>ProcessType</key>
   <string>Interactive</string>
   <key>StandardErrorPath</key>
-  <string>$log</string>
+  <string>$HOME/Library/Logs/herdr-image-drop.stderr.log</string>
 </dict>
 </plist>
 EOF

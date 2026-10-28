@@ -75,9 +75,12 @@ the server is down), the helper falls back to Quick Look.
 
 ## Known limits
 
-- A drag released over the terminal but cancelled still opens a preview;
-  the pasteboard cannot tell a cancel from a drop.
-- A drop on a terminal window that is not running herdr opens Quick Look.
+- The popup opens only when the drop shows up in the focused pane of the
+  default herdr session (the file name, or a new `[Image #N]` placeholder
+  from an agent). A drop anywhere else opens Quick Look: a plain shell, a
+  named session (`herdr --session`), a remote client (`herdr --remote`), or a
+  drop that does not reach the pane. A very quick drop, released before the
+  helper has read the pane, can also fall back to Quick Look.
 - Images dragged from a browser (image data, no file) are skipped.
 - The preview opens in addition to whatever the pane does with the drop; an
   agent that attaches the image still attaches it.
@@ -86,19 +89,20 @@ the server is down), the helper falls back to Quick Look.
 - The helper only checks which app owns the window under the pointer. A drop
   on a window of another app that sits in front of the terminal (the Dock, a
   floating panel) can be mistaken for a drop on the terminal.
-- Remote panes (`ssh`, `herdr --remote`) are not handled specially. The
-  preview is of the file on your Mac.
+- Drops into `ssh` sessions inside a local pane are previewed like local
+  drops. The preview is always of the file on your Mac.
 - The helper is a separate install step that needs `swiftc`.
   `herdr plugin install` alone gives you only the viewer and the
   `preview-last` action.
 
-Helper log: `~/Library/Logs/herdr-image-drop.log`.
+Helper log: `~/Library/Logs/herdr-image-drop.log` (capped at about 1 MB; add
+`--verbose` to the helper to also log ignored drags).
 
 ## Development
 
 ```sh
 python3 -m unittest discover -s tests
-swiftc -O helper/ImageDropWatch.swift -o image-drop-watch
+swiftc -O helper/DropLogic.swift helper/main.swift -o image-drop-watch
 ./image-drop-watch --dry-run   # logs drops, opens nothing
 ```
 

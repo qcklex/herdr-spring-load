@@ -112,6 +112,95 @@ class ConversionTest(unittest.TestCase):
             viewer.to_png(bogus, self.dir)
 
 
+class DisplaySafetyTest(unittest.TestCase):
+    """Finding 2: file names must not inject terminal control sequences."""
+
+    EVIL = "shot\x1b]52;c;ZXZpbA==\x07\x1b[2J\x9b31m.png"
+
+    def assert_no_controls(self, text):
+        for c in text:
+            self.assertFalse(
+                ord(c) < 0x20 or 0x7F <= ord(c) <= 0x9F, "control %r in %r" % (c, text)
+            )
+
+    def test_display_safe(self):
+        safe = viewer.display_safe(self.EVIL)
+        self.assert_no_controls(safe)
+        self.assertEqual(safe, "shot\\x1b]52;c;ZXZpbA==\\x07\\x1b[2J\\x9b31m.png")
+        self.assertEqual(viewer.display_safe("My Shot 1.png"), "My Shot 1.png")
+
+    def test_footer_escapes_file_name(self):
+        v = viewer.Viewer(["/tmp/" + self.EVIL], fd=0)
+        try:
+            self.assert_no_controls(v.footer("10x10", 500))
+        finally:
+            v.close()
+
+    def test_error_text_escaped(self):
+        v = viewer.Viewer(["/tmp/x.png"], fd=0)
+        v.cache[0] = "bad name \x1b]0;title\x07"
+        writes = []
+        real_write, real_window = os.write, viewer.window
+        viewer.os.write = lambda fd, data: writes.append(data) or len(data)
+        viewer.window = lambda fd: (80, 24, 8.0, 16.0)
+        try:
+            v.draw()
+        finally:
+            viewer.os.write, viewer.window = real_write, real_window
+            v.close()
+        text = b"".join(writes).decode()
+        self.assertIn("bad name \\x1b]0;title\\x07", text)
+        self.assertNotIn("\x1b]0;", text)
+
+
+class QuickLookTest(unittest.TestCase):
+    """Finding 3: the action must not leave Quick Look running after it exits."""
+
+    def test_waits_for_quicklook(self):
+        from unittest import mock
+
+        from imagedrop import launch
+
+        proc = mock.Mock()
+        proc.poll.return_value = 0
+        with mock.patch.object(launch.subprocess, "Popen", return_value=proc) as popen:
+            launch.open_quicklook(["/a.png"])
+        kwargs = popen.call_args.kwargs
+        self.assertNotIn("start_new_session", kwargs)
+        proc.wait.assert_called_once_with()
+        proc.terminate.assert_not_called()
+
+    def test_stops_quicklook_when_interrupted(self):
+        from unittest import mock
+
+        from imagedrop import launch
+
+        proc = mock.Mock()
+        proc.wait.side_effect = [KeyboardInterrupt, 0]
+        proc.poll.return_value = None
+        with mock.patch.object(launch.subprocess, "Popen", return_value=proc):
+            with self.assertRaises(KeyboardInterrupt):
+                launch.open_quicklook(["/a.png"])
+        proc.terminate.assert_called_once_with()
+
+    def test_real_child_is_reaped(self):
+        from unittest import mock
+
+        from imagedrop import launch
+
+        real_popen = subprocess.Popen
+        started = []
+
+        def fake(cmd, **kwargs):
+            p = real_popen(["/bin/sleep", "0.2"], **kwargs)
+            started.append(p)
+            return p
+
+        with mock.patch.object(launch.subprocess, "Popen", side_effect=fake):
+            launch.open_quicklook(["/a.png"])
+        self.assertIsNotNone(started[0].returncode)
+
+
 class ConfigTest(unittest.TestCase):
     def test_defaults(self):
         self.assertEqual(config.parse(""), {"viewer": "popup", "max_files": "4"})
