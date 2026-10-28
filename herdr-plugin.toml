@@ -2,7 +2,7 @@ id = "herdr-spring-load"
 name = "herdr-spring-load"
 version = "0.1.0"
 min_herdr_version = "0.9.0"
-description = "Automatically preview image files dropped into herdr panes on macOS"
+description = "Spring-loaded drag and drop for herdr on macOS: hover over tabs, panes or spaces to switch before dropping a file"
 platforms = ["macos"]
 
 [[panes]]

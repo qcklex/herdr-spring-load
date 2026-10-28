@@ -1,8 +1,20 @@
 # herdr-spring-load
 
-Automatically preview image files dropped into herdr panes on macOS.
+Spring-loaded drag and drop for herdr on macOS: hover over tabs, panes or
+spaces while dragging a file to switch to the destination before releasing it.
 
+Like macOS spring-loaded folders, you keep holding the file as you navigate.
+Pause over a tab to switch to it, over a space to open that workspace, or over
+a pane to focus it. Once you reach the pane you want, release the file to drop
+it there.
 
+## Implementation status
+
+This checkout still contains the earlier image-preview helper described below.
+The spring-loaded navigation implementation is being developed separately;
+renaming the project has not added that behavior to this helper.
+
+## Earlier image-preview helper
 
 It also works in agent TUIs such as Claude Code, which swap a dropped image
 for an `[Image #1]` placeholder: the dropped file is taken from the macOS drag
@@ -121,8 +133,6 @@ Look.
 
 ## Known limits
 
-- This repository provides image previews. Hovering to switch tabs, panes or
-  workspaces is not implemented here.
 
 - The popup opens only when the drop shows up in the focused pane of the
   default herdr session (the file name, or a new `[Image #N]` placeholder
