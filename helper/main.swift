@@ -1,5 +1,5 @@
-// image-drop-watch: notice image files dropped onto a herdr pane and open
-// them in the herdr-image-drop popup.
+// herdr-spring-load: notice image files dropped onto a herdr pane and open
+// them in the herdr-spring-load popup.
 //
 // It polls the system drag pasteboard. When a drag that carries image file
 // URLs starts, it records herdr's focused pane and its recent text. When the
@@ -13,7 +13,7 @@ import AppKit
 import CoreGraphics
 import Foundation
 
-let pluginID = "herdr-image-drop"
+let pluginID = "herdr-spring-load"
 
 struct Options {
     var herdr = ""
@@ -40,7 +40,7 @@ func parseOptions(_ args: [String]) -> Options {
         case "--verbose":
             options.verbose = true
         case "-h", "--help":
-            print("usage: image-drop-watch [--herdr PATH] [--terminal BUNDLE_ID]... [--dry-run] [--verbose]")
+            print("usage: herdr-spring-load [--herdr PATH] [--terminal BUNDLE_ID]... [--dry-run] [--verbose]")
             exit(0)
         default:
             FileHandle.standardError.write("unknown argument: \(arg)\n".data(using: .utf8)!)
@@ -64,7 +64,7 @@ func parseOptions(_ args: [String]) -> Options {
 }
 
 let home = ProcessInfo.processInfo.environment["HOME"] ?? NSHomeDirectory()
-let logURL = URL(fileURLWithPath: home + "/Library/Logs/herdr-image-drop.log")
+let logURL = URL(fileURLWithPath: home + "/Library/Logs/herdr-spring-load.log")
 let logLimit: UInt64 = 1_000_000
 
 /// Append to the log file, starting over once it passes logLimit bytes.
@@ -125,7 +125,7 @@ final class Watcher {
 
     // All herdr CLI calls happen here, one at a time and in drop order, so a
     // slow or stuck CLI never stalls drag polling.
-    let worker = DispatchQueue(label: "herdr-image-drop.worker")
+    let worker = DispatchQueue(label: "herdr-spring-load.worker")
     // Worker queue only.
     var baselines: [Int: Baseline] = [:]
 

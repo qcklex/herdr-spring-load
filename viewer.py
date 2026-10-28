@@ -24,7 +24,7 @@ from typing import Dict, List, Optional, Tuple
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
-from imagedrop import kitty  # noqa: E402
+from springload import kitty  # noqa: E402
 
 MAX_PIXELS = 2048
 NEXT_KEYS = (b"j", b"l", b" ", b"\x1b[C", b"\x1bOC")
@@ -136,7 +136,7 @@ class Viewer:
         self.fd = fd
         self.index = 0
         self.cache: Dict[int, object] = {}
-        self.tmpdir = tempfile.mkdtemp(prefix="herdr-image-drop.")
+        self.tmpdir = tempfile.mkdtemp(prefix="herdr-spring-load.")
         self.resized = False
 
     def load(self, i: int) -> object:
@@ -211,7 +211,7 @@ class Viewer:
 def main() -> int:
     paths = [p for p in requested_paths(dict(os.environ)) if os.path.isfile(p)]
     if not paths:
-        sys.stderr.write("herdr-image-drop: no image files given\n")
+        sys.stderr.write("herdr-spring-load: no image files given\n")
         return 1
     record_last(paths)
     fd = sys.stdin.fileno()

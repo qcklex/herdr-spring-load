@@ -13,7 +13,7 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, ROOT)
 
 import viewer  # noqa: E402
-from imagedrop import config, kitty  # noqa: E402
+from springload import config, kitty  # noqa: E402
 
 
 def tiny_png(width=3, height=2):
@@ -159,7 +159,7 @@ class QuickLookTest(unittest.TestCase):
     def test_waits_for_quicklook(self):
         from unittest import mock
 
-        from imagedrop import launch
+        from springload import launch
 
         proc = mock.Mock()
         proc.poll.return_value = 0
@@ -173,7 +173,7 @@ class QuickLookTest(unittest.TestCase):
     def test_stops_quicklook_when_interrupted(self):
         from unittest import mock
 
-        from imagedrop import launch
+        from springload import launch
 
         proc = mock.Mock()
         proc.wait.side_effect = [KeyboardInterrupt, 0]
@@ -186,7 +186,7 @@ class QuickLookTest(unittest.TestCase):
     def test_real_child_is_reaped(self):
         from unittest import mock
 
-        from imagedrop import launch
+        from springload import launch
 
         real_popen = subprocess.Popen
         started = []

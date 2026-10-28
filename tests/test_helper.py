@@ -39,7 +39,7 @@ class HelperTest(unittest.TestCase):
     def test_helper_builds_and_stops_on_sigterm(self):
         binary = self.build(
             [os.path.join(HELPER, "DropLogic.swift"), os.path.join(HELPER, "main.swift")],
-            "image-drop-watch",
+            "herdr-spring-load",
         )
         env = dict(os.environ, HOME=self.dir)
         os.makedirs(os.path.join(self.dir, "Library", "Logs"), exist_ok=True)

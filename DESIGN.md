@@ -1,4 +1,4 @@
-# herdr-image-drop: design
+# herdr-spring-load: design
 
 This is the design note written before the code. One change since: the shipped helper also
 confirms the drop in herdr's focused pane before opening the popup, and uses Quick Look otherwise.
@@ -56,7 +56,7 @@ Checked and rejected as the primary mechanism:
 ## 5. Recommended design: detect the drag gesture natively, show the preview through herdr
 
 Two parts in one repo.
-A. `image-drop-watch`: a small native macOS helper (Swift, about 150 lines, run as a LaunchAgent the way
+A. `herdr-spring-load`: a small native macOS helper (Swift, about 150 lines, run as a LaunchAgent the way
    herdr-focus-pane does it; the user installs it). It needs no Accessibility or Input Monitoring permission:
    1. Poll `NSPasteboard(name: .drag).changeCount` every 100 ms. On a change, read
       `readObjects(forClasses: [NSURL], options: [.urlReadingFileURLsOnly: true])` and keep files whose UTType
@@ -71,9 +71,9 @@ A. `image-drop-watch`: a small native macOS helper (Swift, about 150 lines, run 
       after and blocked by TCC (a shell here gets "Operation not permitted"). The viewer copies the file to
       `HERDR_PLUGIN_STATE_DIR` at once. Test first: the helper only passes the path and the popup (under
       Ghostty's TCC identity) reads it; if that fails too, the helper needs Full Disk Access.
-   4. Open the preview (below); log to `~/Library/Logs/herdr-image-drop.log`.
+   4. Open the preview (below); log to `~/Library/Logs/herdr-spring-load.log`.
 
-B. The herdr plugin `herdr-image-drop` (the display side; no startup hook, nothing long-lived):
+B. The herdr plugin `herdr-spring-load` (the display side; no startup hook, nothing long-lived):
    ```toml
    [[panes]]
    id = "viewer"
@@ -85,7 +85,7 @@ B. The herdr plugin `herdr-image-drop` (the display side; no startup hook, nothi
    [[actions]]
    id = "preview-last"                  # re-open the last dropped image (path read from HERDR_PLUGIN_STATE_DIR)
    ```
-   The helper runs `"$HERDR" plugin pane open --plugin herdr-image-drop --entrypoint viewer --env IMAGE=<abs path>`,
+   The helper runs `"$HERDR" plugin pane open --plugin herdr-spring-load --entrypoint viewer --env IMAGE=<abs path>`,
    herdr from `/opt/homebrew/bin/herdr` or config (a LaunchAgent has no `HERDR_BIN_PATH`; default socket).
    Kitty `f=100` takes PNG only (no HEIC, no JPEG), so viewer.py runs every image (HEIC, JPG, WebP, TIFF,
    large PNG) through `sips -s format png -Z 1600 <in> --out <state>/<hash>.png` before sending Kitty
@@ -95,7 +95,7 @@ B. The herdr plugin `herdr-image-drop` (the display side; no startup hook, nothi
 Fallback chain if the popup open fails (`ui_busy`, no attached client, server down, or the drop is in a
 non-herdr Ghostty window): `qlmanage -p <file>` (Quick Look, transient). A config key
 `viewer = "popup" | "quicklook" | "preview"` (`open -a Preview`) lives in
-`$(herdr plugin config-dir herdr-image-drop)/config.toml`, and the helper reads it too.
+`$(herdr plugin config-dir herdr-spring-load)/config.toml`, and the helper reads it too.
 
 ## 6. Edge cases
 

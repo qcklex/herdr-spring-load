@@ -1,4 +1,4 @@
-"""Plugin config: $(herdr plugin config-dir herdr-image-drop)/config.toml.
+"""Plugin config: $(herdr plugin config-dir herdr-spring-load)/config.toml.
 
 Only flat `key = value` lines are used, so this reads them directly instead of
 requiring tomllib (missing from the Python 3.9 that ships with macOS).

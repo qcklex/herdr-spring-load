@@ -6,7 +6,7 @@ the shots and how to make them.
 
 ## Rules
 
-- Use a clean herdr session: only the `herdr-image-drop` workspace, or one throwaway pane with a
+- Use a clean herdr session: only the `herdr-spring-load` workspace, or one throwaway pane with a
   plain shell. No agent conversations, notifications or other workspaces in view.
 - Drag only the generated test images, never personal photos or documents:
 

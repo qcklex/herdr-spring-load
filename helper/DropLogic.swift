@@ -28,7 +28,7 @@ func runCommand(_ path: String, _ args: [String], timeout: TimeInterval) -> Comm
     }
     process.environment = env
     let outURL = FileManager.default.temporaryDirectory
-        .appendingPathComponent("herdr-image-drop.\(UUID().uuidString).out")
+        .appendingPathComponent("herdr-spring-load.\(UUID().uuidString).out")
     FileManager.default.createFile(atPath: outURL.path, contents: nil)
     defer { try? FileManager.default.removeItem(at: outURL) }
     guard let outHandle = try? FileHandle(forWritingTo: outURL) else {

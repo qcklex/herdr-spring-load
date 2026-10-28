@@ -17,7 +17,7 @@ from typing import List
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
-from imagedrop import config, launch, paths  # noqa: E402
+from springload import config, launch, paths  # noqa: E402
 
 
 def from_state() -> List[str]:
@@ -49,7 +49,7 @@ def main() -> int:
     found = from_state() or from_pane()
     found = found[: int(settings["max_files"])]
     if not found:
-        sys.stderr.write("herdr-image-drop: no recent image to show\n")
+        sys.stderr.write("herdr-spring-load: no recent image to show\n")
         return 1
     used = launch.open_images(found, settings["viewer"])
     print("opened %d image(s) with %s" % (len(found), used))

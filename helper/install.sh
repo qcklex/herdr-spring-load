@@ -1,14 +1,14 @@
 #!/bin/sh
-# Build image-drop-watch and run it as a per-user LaunchAgent.
+# Build herdr-spring-load and run it as a per-user LaunchAgent.
 # Usage: sh helper/install.sh [--terminal BUNDLE_ID]...
 set -eu
 
 here=$(cd "$(dirname "$0")" && pwd)
-label="dev.qcklex.herdr-image-drop"
-support="$HOME/Library/Application Support/herdr-image-drop"
-bin="$support/image-drop-watch"
+label="dev.qcklex.herdr-spring-load"
+support="$HOME/Library/Application Support/herdr-spring-load"
+bin="$support/herdr-spring-load"
 plist="$HOME/Library/LaunchAgents/$label.plist"
-log="$HOME/Library/Logs/herdr-image-drop.log"
+log="$HOME/Library/Logs/herdr-spring-load.log"
 
 command -v swiftc >/dev/null 2>&1 || {
     echo "swiftc not found; install the Xcode command line tools: xcode-select --install" >&2
@@ -50,11 +50,11 @@ $extra  </array>
   <key>ProcessType</key>
   <string>Interactive</string>
   <key>StandardErrorPath</key>
-  <string>$HOME/Library/Logs/herdr-image-drop.stderr.log</string>
+  <string>$HOME/Library/Logs/herdr-spring-load.stderr.log</string>
 </dict>
 </plist>
 EOF
 
 launchctl bootout "gui/$(id -u)/$label" 2>/dev/null || true
 launchctl bootstrap "gui/$(id -u)" "$plist"
-echo "image-drop-watch is running (log: $log)"
+echo "herdr-spring-load is running (log: $log)"

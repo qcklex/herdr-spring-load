@@ -7,7 +7,7 @@ import os
 import subprocess
 from typing import List, Sequence
 
-PLUGIN_ID = "herdr-image-drop"
+PLUGIN_ID = "herdr-spring-load"
 
 
 def herdr_bin() -> str:

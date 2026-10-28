@@ -1,8 +1,8 @@
-id = "herdr-image-drop"
-name = "Image Drop"
+id = "herdr-spring-load"
+name = "herdr-spring-load"
 version = "0.1.0"
 min_herdr_version = "0.9.0"
-description = "Preview an image as soon as you drag it onto a pane"
+description = "Automatically preview image files dropped into herdr panes on macOS"
 platforms = ["macos"]
 
 [[panes]]

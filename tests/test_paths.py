@@ -6,7 +6,7 @@ import unittest
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from imagedrop import paths  # noqa: E402
+from springload import paths  # noqa: E402
 
 
 class TokenizeTest(unittest.TestCase):
