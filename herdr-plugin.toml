@@ -1,0 +1,20 @@
+id = "herdr-image-drop"
+name = "Image Drop"
+version = "0.1.0"
+min_herdr_version = "0.9.0"
+description = "Preview an image as soon as you drag it onto a pane"
+platforms = ["macos"]
+
+[[panes]]
+id = "viewer"
+title = "Image"
+placement = "popup"
+width = "80%"
+height = "80%"
+command = ["python3", "viewer.py"]
+
+[[actions]]
+id = "preview-last"
+title = "Preview last dropped image"
+contexts = ["workspace"]
+command = ["python3", "preview_last.py"]
