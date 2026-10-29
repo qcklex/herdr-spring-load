@@ -51,6 +51,13 @@ class ContractTest(unittest.TestCase):
         self.assertIsNone(plain['all_clients'])
         self.assertIsNone(contract.parse_event(json.dumps({'type': 'drag_start', 't': 1, 'x': 1, 'y': 2, 'window': None, 'all_clients': {}})))
 
+    def test_optional_started(self):
+        event = contract.parse_event(json.dumps({'type': 'drag_move', 't': 1, 'x': 1, 'y': 2,
+                                                 'window': {**WINDOW, 'clients': [{**CLIENT, 'started': 1793280547.5}]}}))
+        self.assertEqual(event['window']['clients'][0]['started'], 1793280547.5)
+        self.assertIsNone(contract.parse_event(json.dumps({'type': 'drag_move', 't': 1, 'x': 1, 'y': 2,
+                                                           'window': {**WINDOW, 'clients': [{**CLIENT, 'started': 'x'}]}})))
+
     def test_unknown_fields_are_ignored(self):
         event = contract.parse_event('{"type":"drag_end","t":1,"x":1,"y":2,"reason":"released","extra":5}')
         self.assertNotIn('extra', event)

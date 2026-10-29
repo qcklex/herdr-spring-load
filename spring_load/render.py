@@ -377,9 +377,12 @@ def git_branch_present(cwd):
             return None
         root = None
         for candidate in [path, *path.parents]:
-            if (candidate/'.git').exists():
+            git = candidate/'.git'
+            if git.is_file() or (git.is_dir() and (git/'HEAD').exists()):
                 root = candidate
                 break
+            if (candidate/'HEAD').is_file() and (candidate/'objects').is_dir() and (candidate/'refs').is_dir():
+                return None   # a bare repository layout: herdr's discovery differs, refuse
         if root is None:
             return False
         git = root/'.git'
@@ -405,11 +408,28 @@ def git_branch_present(cwd):
     except (OSError, UnicodeDecodeError, ValueError):
         return None
 
+def git_head_path(cwd):
+    """The HEAD file git_branch_present(cwd) reads, or None."""
+    try:
+        path = Path(cwd)
+        for candidate in [path, *path.parents]:
+            git = candidate/'.git'
+            if git.is_dir() and (git/'HEAD').exists():
+                return git/'HEAD'
+            if git.is_file():
+                text = git.read_text(errors='strict').strip()
+                if not text.startswith('gitdir:'):
+                    return None
+                target = Path(text[len('gitdir:'):].strip())
+                return (target if target.is_absolute() else candidate/target)/'HEAD'
+    except (OSError, UnicodeDecodeError, ValueError):
+        return None
+    return None
+
 def identity_cwd(snapshot, workspace_id):
     """The cwd herdr names a workspace by: its first tab's root pane. The API
     does not say which pane is the root, so all panes of that tab must agree."""
-    tabs = sorted((t for t in snapshot.get('tabs', []) if t.get('workspace_id') == workspace_id),
-                  key=lambda t: t.get('number', 0))
+    tabs = [t for t in snapshot.get('tabs', []) if t.get('workspace_id') == workspace_id]
     if not tabs:
         return None
     cwds = {p.get('cwd') for p in snapshot.get('panes', []) if p.get('tab_id') == tabs[0]['tab_id']}
@@ -435,9 +455,12 @@ def pane_targets(surface, layout):
         targets.append(Target('pane', pane['pane_id'], rect))
     return targets
 
-def build_model(cols, rows, snapshot, ui, prefs, remote_endpoints=False, branch_present=git_branch_present):
+def build_model(cols, rows, snapshot, ui, prefs, remote_endpoints=False, branch_present=git_branch_present,
+                branch_settled=lambda workspace_id, cwd: True):
     """All targets of a client of size cols x rows showing `snapshot`
-    (session.snapshot's `snapshot` object, as seen by its single client)."""
+    (session.snapshot's `snapshot` object, as seen by its single client).
+    `branch_settled(workspace_id, cwd)` is False while herdr's asynchronous
+    git cache may still lag the disk; the branch row is then unknown."""
     model = Model(cols, rows)
     if snapshot.get('version') not in SUPPORTED_VERSIONS:
         reason = f'herdr {snapshot.get("version")} is not a version this replica was checked against'
@@ -448,8 +471,9 @@ def build_model(cols, rows, snapshot, ui, prefs, remote_endpoints=False, branch_
         model.refused = {k: reason for k in ('space', 'tab', 'pane')}
         return model
     focused_ws = snapshot.get('focused_workspace_id')
-    workspaces = sorted(snapshot.get('workspaces', []), key=lambda w: w.get('number', 0))
-    tabs = sorted((t for t in snapshot.get('tabs', []) if t.get('workspace_id') == focused_ws), key=lambda t: t.get('number', 0))
+    # herdr draws spaces and tabs in snapshot (index) order.
+    workspaces = list(snapshot.get('workspaces', []))
+    tabs = [t for t in snapshot.get('tabs', []) if t.get('workspace_id') == focused_ws]
     layouts = snapshot.get('layouts', [])
     zoomed = {l.get('tab_id'): bool(l.get('zoomed')) for l in layouts}
     shell = shell_layout(cols, rows, ui, prefs, len(tabs))
@@ -471,7 +495,7 @@ def build_model(cols, rows, snapshot, ui, prefs, remote_endpoints=False, branch_
                     key = workspace['workspace_id']
                     if key not in cache:
                         cwd = identity_cwd(snapshot, key)
-                        cache[key] = None if cwd is None else branch_present(cwd)
+                        cache[key] = None if cwd is None or not branch_settled(key, cwd) else branch_present(cwd)
                     return cache[key]
                 model.targets += expanded_sidebar_targets(shell.sidebar, workspaces, ui, prefs, branch_of)
         except Refused as why:

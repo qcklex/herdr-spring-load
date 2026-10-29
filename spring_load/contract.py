@@ -62,6 +62,8 @@ def validate_client(value):
               'xpixel': _int(value.get('xpixel', 0), 'client.xpixel'),
               'ypixel': _int(value.get('ypixel', 0), 'client.ypixel'),
               'foreground': foreground}
+    started = value.get('started')
+    client['started'] = None if started is None else _number(started, 'client.started')
     env = value.get('env')
     if env is not None:
         if not isinstance(env, dict) or not all(isinstance(k, str) and isinstance(v, str) for k, v in env.items()):

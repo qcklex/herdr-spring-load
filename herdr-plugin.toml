@@ -1,67 +1,25 @@
 id = "herdr-spring-load"
 name = "herdr-spring-load"
-version = "0.2.0"
+version = "0.3.0"
 min_herdr_version = "0.9.3"
-description = "Spring-loaded drag and drop: hover over spaces, tabs and panes while holding a file, then release to drop it"
+description = "Spring-loaded drag and drop: while you hold a file, hovering a space, tab or pane opens it; the terminal takes the drop"
 platforms = ["macos"]
 
-# Builds, signs and starts the helper, and adds the private keybindings.
-# Transactional: a failure leaves the previous state in place.
+# Builds and checks the sensor, installs the core and starts the login
+# service. No OS permission, no config edits. Transactional.
 [[build]]
 command = ["sh", "scripts/build.sh"]
 platforms = ["macos"]
 
 [[actions]]
-id = "probe-1"
-title = "Spring-load client probe 1"
-contexts = ["workspace"]
-command = ["python3", "probe.py", "1"]
-
-[[actions]]
-id = "probe-2"
-title = "Spring-load client probe 2"
-contexts = ["workspace"]
-command = ["python3", "probe.py", "2"]
-
-[[actions]]
-id = "probe-3"
-title = "Spring-load client probe 3"
-contexts = ["workspace"]
-command = ["python3", "probe.py", "3"]
-
-[[actions]]
-id = "probe-4"
-title = "Spring-load client probe 4"
-contexts = ["workspace"]
-command = ["python3", "probe.py", "4"]
-
-[[actions]]
-id = "probe-5"
-title = "Spring-load client probe 5"
-contexts = ["workspace"]
-command = ["python3", "probe.py", "5"]
-
-[[actions]]
-id = "probe-6"
-title = "Spring-load client probe 6"
-contexts = ["workspace"]
-command = ["python3", "probe.py", "6"]
-
-[[actions]]
-id = "probe-7"
-title = "Spring-load client probe 7"
-contexts = ["workspace"]
-command = ["python3", "probe.py", "7"]
-
-[[actions]]
 id = "status"
 title = "Spring-load helper status"
 contexts = ["workspace"]
-command = ["sh", "scripts/status.sh"]
+command = ["sh", "scripts/build.sh", "--status"]
 
 [[actions]]
 id = "remove-helper"
-title = "Remove herdr-spring-load helper and keybindings (run before herdr plugin uninstall)"
+title = "Remove herdr-spring-load helper (run before herdr plugin uninstall)"
 contexts = ["workspace"]
 command = ["sh", "helper/uninstall.sh"]
 

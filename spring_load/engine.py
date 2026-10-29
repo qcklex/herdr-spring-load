@@ -1,6 +1,7 @@
 """The spring-loading loop: sensor events in, at most one herdr focus call per
 dwell out. It never touches the drag itself; the terminal and herdr take the
 file wherever the pointer is released."""
+from collections import deque
 from dataclasses import dataclass, field
 import json
 import os
@@ -17,9 +18,27 @@ from .sensor import SensorError
 
 EVENT_KIND = {'workspace_focused': 'space', 'tab_focused': 'tab', 'pane_focused': 'pane'}
 EVENT_ID = {'space': 'workspace_id', 'tab': 'tab_id', 'pane': 'pane_id'}
+SNAPSHOT_ID = {'space': 'focused_workspace_id', 'tab': 'focused_tab_id', 'pane': 'focused_pane_id'}
 LEVEL = {'space': 0, 'tab': 1, 'pane': 2}
-CLICK_WINDOW = 0.4   # seconds after a click in which herdr's focus event must arrive
+# herdr focuses a clicked Space or tab on mouse up, and the sensor reports the
+# click after it sees the release, so the focus event often arrives first.
+# A click is matched against focus changes from CLICK_BEFORE before it to
+# CLICK_AFTER after it.
+CLICK_BEFORE = 0.5
+CLICK_AFTER = 0.4
+BURST_GAP = 0.15     # herdr's workspace, tab and pane events of one focus change
+AFTER_DRAG = 1.0     # clicks right after a drag may meet the plugin's own focus calls
 MODEL_TTL = 1.0      # re-read herdr state at least this often during a drag
+SETTLE = 5.0         # seconds herdr's git cache may lag a changed cwd or HEAD
+DISCOVER_EVERY = 10.0
+ALL_KINDS = frozenset(('space', 'tab', 'pane'))
+UNCONFIRMED = {
+    'tab': "herdr's config changed after this herdr client started, so the plugin cannot tell which config it shows. "
+           'Click a different tab twice (or restart the client) to confirm',
+    'pane': "herdr's config changed after this herdr client started; click a different tab twice to confirm the panes",
+    'space': "herdr's config changed after this herdr client started; click a Space below the first one twice "
+             'to confirm the Space rows'}
+REMOVAL_CONFIRM = 3.0
 
 @dataclass
 class Settings:
@@ -88,9 +107,18 @@ class Engine:
         self.dragging = False
         self.everyone = None
         self.context = None
-        self.pending_click = None
         self.hover = None
         self.removed = False
+        self.focus = {}            # api socket -> {'space': id, 'tab': id, 'pane': id}, from events
+        self.changes = deque(maxlen=256)   # (at, socket, kind, id) focus changes herdr reported
+        self.pending_clicks = []
+        self.last_drag_end = -1e9
+        self.next_discover = -1e9
+        self.verified = {}         # (client pid, config path) -> config stamp a click confirmed
+        self.stale = {}            # calibration key -> why the replica disagreed with herdr
+        self.identities = {}       # (api socket, workspace id) -> (identity cwd, when it changed)
+        self.starts = {}           # client pid -> process start (epoch seconds) or None
+        self.missing_since = None
 
     # MARK: status
 
@@ -112,7 +140,7 @@ class Engine:
             self.write_status()
 
     def write_status(self):
-        data = dict(self.status, updated=time.time(), calibrated=len(self.calibration.data))
+        data = dict(self.status, updated=time.time(), calibrated=self.calibration.calibrated())
         try:
             self.support.mkdir(parents=True, exist_ok=True)
             fd, temp = tempfile.mkstemp(prefix='status.', dir=self.support)
@@ -135,6 +163,9 @@ class Engine:
         self.report('idle', None, sensor=f'{hello["sensor"]} {hello["version"]}')
         try:
             while not self.removed and (until is None or not until()):
+                if self.clock() >= self.next_discover:
+                    self.next_discover = self.clock() + DISCOVER_EVERY
+                    self.discover_sessions()
                 event = self.sensor.next(timeout=0.03)
                 if event is not None:
                     self.handle(event)
@@ -172,6 +203,8 @@ class Engine:
         self.move(event)
 
     def end_drag(self):
+        if self.dragging:
+            self.last_drag_end = self.clock()
         self.dragging = False
         self.everyone = None
         self.context = None
@@ -272,8 +305,16 @@ class Engine:
         if count != 1:
             raise Unavailable(f'{count} herdr clients are attached to this session; herdr focus calls would move all of them, '
                               'so spring-loading only works with exactly one')
-        model, snapshot = self.read_model(binding, client)
         key = geometry.calibration_key(window.get('app'), bounds, client)
+        if key in self.stale:
+            raise Unavailable(self.stale[key])
+        allowed = self.check_config(binding, client)
+        model, snapshot = self.read_model(binding, client)
+        if allowed != ALL_KINDS:
+            model.targets = [t for t in model.targets if t.kind in allowed]
+            for kind in ALL_KINDS - allowed:
+                model.refused.setdefault(kind, UNCONFIRMED[kind])
+            self.report(refused=dict(model.refused))
         self.context = Context(window['id'], client['pid'], binding, self.calibration.apply(key, grid), key, model, snapshot, now, bounds)
         self.ensure_subscription(binding.api_socket)
         return self.context
@@ -292,7 +333,8 @@ class Engine:
         except (OSError, ValueError):
             raise Unavailable(f'cannot read {prefs_file}')
         remote = render.remote_endpoints_listed(binding.state_dir)
-        model = render.build_model(client['cols'], client['rows'], snapshot, ui, prefs, remote_endpoints=remote)
+        model = render.build_model(client['cols'], client['rows'], snapshot, ui, prefs, remote_endpoints=remote,
+                                   branch_settled=lambda ws, cwd: self.branch_settled(binding.api_socket, ws, cwd))
         if model.refused:
             self.report(refused=dict(model.refused))
         elif self.status.get('refused'):
@@ -304,7 +346,97 @@ class Engine:
         return {'space': snapshot.get('focused_workspace_id'), 'tab': snapshot.get('focused_tab_id'),
                 'pane': snapshot.get('focused_pane_id')}[target.kind] == target.id
 
+    # MARK: which config the client shows (herdr has no API for it)
+
+    def config_stamp(self, path):
+        try:
+            return path.stat().st_mtime
+        except FileNotFoundError:
+            try:
+                return path.parent.stat().st_mtime   # a deleted config shows in its folder
+            except OSError:
+                return None
+        except OSError:
+            return None
+
+    def client_start(self, client):
+        started = client.get('started')
+        if isinstance(started, (int, float)):
+            return float(started)
+        pid = client['pid']
+        if pid not in self.starts:
+            self.starts[pid] = clients.process_start(pid, self.platform)
+        return self.starts[pid]
+
+    def check_config(self, binding, client):
+        """Which target kinds the replica's config can be trusted for. herdr's
+        client reads config.toml when it starts and on a reload, and no API
+        says which. Everything is trusted when the file is older than the client
+        process. Otherwise a calibration click that agreed with an origin stored
+        earlier confirms only what it can prove: a tab click the tab bar and
+        the panes below it, a click on a Space below the first one the Space
+        rows (spaces.rows and row_gap move only those)."""
+        stamp = self.config_stamp(binding.config_path)
+        if stamp is None:
+            raise Unavailable(f'cannot tell when {binding.config_path} last changed')
+        start = self.client_start(client)
+        if start is not None and stamp < start - 1:
+            return ALL_KINDS
+        confirmed = self.verified.get((client['pid'], str(binding.config_path)))
+        allowed = frozenset(confirmed[1]) if confirmed and confirmed[0] == stamp else frozenset()
+        if not allowed:
+            raise Unavailable(UNCONFIRMED['tab'])
+        return allowed
+
+    def confirm_config(self, click, target, model):
+        stamp = self.config_stamp(click['binding'].config_path)
+        if stamp is None:
+            return
+        key = (click['client']['pid'], str(click['binding'].config_path))
+        previous = self.verified.get(key)
+        kinds = set(previous[1]) if previous and previous[0] == stamp else set()
+        if target.kind == 'tab':
+            kinds |= {'tab', 'pane'}
+        elif target.kind == 'space':
+            first = min((t.rect.y for t in model.targets if t.kind == 'space'), default=None)
+            if target.rect.y != first:
+                kinds.add('space')
+        self.verified[key] = (stamp, kinds)
+
+    def branch_settled(self, api_socket, workspace_id, cwd):
+        """False while herdr's asynchronous git cache may lag the disk: the
+        workspace's identity cwd changed, or its HEAD moved, within SETTLE seconds."""
+        now = time.time()
+        key = (api_socket, workspace_id)
+        previous = self.identities.get(key)
+        if previous is None or previous[0] != cwd:
+            self.identities[key] = (cwd, -1e18 if previous is None else now)
+        if now - self.identities[key][1] < SETTLE:
+            return False
+        head = render.git_head_path(cwd)
+        try:
+            if head is not None and now - head.stat().st_mtime < SETTLE:
+                return False
+        except OSError:
+            pass
+        return True
+
     # MARK: calibration from ordinary clicks
+
+    def discover_sessions(self):
+        """Subscribe to focus events of every session found in the core's own
+        herdr directories before any click, so the first click is not lost."""
+        config_dir, _ = clients.herdr_dirs(self.env, self.platform)
+        sockets = [config_dir/'herdr.sock']
+        sessions = config_dir/'sessions'
+        try:
+            if sessions.is_dir():
+                sockets += sorted(p/'herdr.sock' for p in sessions.iterdir() if p.is_dir())
+        except OSError:
+            pass
+        for path in sockets:
+            if path.exists():
+                self.ensure_subscription(path)
 
     def ensure_subscription(self, api_socket):
         current = self.subscriptions.get(api_socket)
@@ -313,12 +445,22 @@ class Engine:
         try:
             self.subscriptions[api_socket] = herdr_api.Subscription(
                 api_socket, lambda event, s=api_socket: self.events.put((self.clock(), s, event)))
+            snapshot = herdr_api.snapshot(api_socket, timeout=0.5)
         except (OSError, ValueError, herdr_api.ApiError) as error:
             self.log(f'no focus events from {api_socket}: {error}')
+            return
+        # Baseline of every workspace's identity cwd, so a cd before the first drag
+        # counts as a change (review M2).
+        for workspace in snapshot.get('workspaces', []):
+            cwd = render.identity_cwd(snapshot, workspace.get('workspace_id'))
+            if cwd is not None:
+                self.identities.setdefault((api_socket, workspace['workspace_id']), (cwd, -1e18))
+        # Queued after any event that came first, so the main thread applies it in order.
+        self.events.put((self.clock(), api_socket, {'seed': {k: snapshot.get(v) for k, v in SNAPSHOT_ID.items()}}))
 
     def click(self, event):
         window = event.get('window')
-        if window is None:
+        if window is None or self.clock() - self.last_drag_end < AFTER_DRAG:
             return
         try:
             client, grid = self.bound_client(window)
@@ -327,9 +469,9 @@ class Engine:
             return
         self.ensure_subscription(binding.api_socket)
         bounds = (window['bounds']['width'], window['bounds']['height'])
-        self.pending_click = {'at': self.clock(), 'socket': binding.api_socket, 'binding': binding, 'client': client,
-                              'grid': grid, 'key': geometry.calibration_key(window.get('app'), bounds, client),
-                              'dx': event['x'] - window['bounds']['x'], 'dy': event['y'] - window['bounds']['y'], 'best': None}
+        self.pending_clicks.append({'at': self.clock(), 'socket': binding.api_socket, 'binding': binding, 'client': client,
+                                    'grid': grid, 'key': geometry.calibration_key(window.get('app'), bounds, client),
+                                    'dx': event['x'] - window['bounds']['x'], 'dy': event['y'] - window['bounds']['y']})
 
     def drain_herdr_events(self):
         while True:
@@ -337,30 +479,75 @@ class Engine:
                 at, socket_path, event = self.events.get_nowait()
             except queue.Empty:
                 break
-            click = self.pending_click
-            kind = EVENT_KIND.get(event.get('event'))
-            if not click or kind is None or socket_path != click['socket'] or at - click['at'] > CLICK_WINDOW:
+            if 'seed' in event:
+                self.focus[socket_path] = dict(event['seed'])
                 continue
-            target_id = (event.get('data') or {}).get(EVENT_ID[kind])
-            if target_id and (click['best'] is None or LEVEL[kind] < LEVEL[click['best'][0]]):
-                click['best'] = (kind, target_id)
-        click = self.pending_click
-        if click and self.clock() - click['at'] > CLICK_WINDOW:
-            self.pending_click = None
-            if click['best'] and not self.dragging:
-                self.learn(click)
+            kind = EVENT_KIND.get(event.get('event'))
+            target_id = (event.get('data') or {}).get(EVENT_ID[kind]) if kind else None
+            if not target_id:
+                continue
+            known = self.focus.setdefault(socket_path, {})
+            # herdr sends all three events on any focus change (app/api.rs), so
+            # only the levels whose id changed say what the user clicked.
+            if known.get(kind) is not None and known[kind] != target_id:
+                self.changes.append((at, socket_path, kind, target_id))
+            known[kind] = target_id
+        now = self.clock()
+        while self.changes and self.changes[0][0] < now - 10:
+            self.changes.popleft()
+        ready = [c for c in self.pending_clicks if now - c['at'] > CLICK_AFTER]
+        self.pending_clicks = [c for c in self.pending_clicks if c not in ready]
+        for click in ready:
+            best = self.attribute(click)
+            if best and not self.dragging:
+                self.learn(click, best)
 
-    def learn(self, click):
+    def attribute(self, click):
+        """(kind, id) the click focused: the shallowest level that changed in the
+        one burst of focus changes near it, before or after. None when there is
+        no burst or more than one."""
+        near = sorted((c for c in self.changes if c[1] == click['socket']
+                       and click['at'] - CLICK_BEFORE <= c[0] <= click['at'] + CLICK_AFTER), key=lambda c: c[0])
+        if not near:
+            return None
+        if any(b[0] - a[0] > BURST_GAP for a, b in zip(near, near[1:])):
+            return None
+        for change in near:
+            self.changes.remove(change)
+        kind = min((c[2] for c in near), key=LEVEL.get)
+        ids = {c[3] for c in near if c[2] == kind}
+        if len(ids) != 1:
+            return None   # two Spaces (or tabs) focused in one burst: which one was clicked is unknown
+        return kind, ids.pop()
+
+    def learn(self, click, best):
         try:
             model, _ = self.read_model(click['binding'], click['client'])
         except Unavailable:
             return
-        target = model.find(*click['best'])
+        target = model.find(*best)
         if target is None:
             return
-        if self.calibration.learn(click['key'], click['grid'], click['dx'], click['dy'], target.rect):
-            self.log(f'calibrated from a click on {target.kind} {target.id}')
-            self.report(calibrated=len(self.calibration.data))
+        # Before any calibration the click's cell is uncertain by up to a few rows.
+        # Unless no other target of that kind lies in that range, one click is
+        # not proof: keep it provisional until a second click agrees.
+        (c0, c1), (r0, r1) = click['grid'].cells(click['dx'], click['dy'])
+        others = [t for t in model.targets if t.kind == target.kind and t.id != target.id
+                  and t.rect.x <= c1 and t.rect.right > c0 and t.rect.y <= r1 and t.rect.bottom > r0]
+        outcome = self.calibration.learn(click['key'], click['grid'], click['dx'], click['dy'], target.rect,
+                                         provisional=bool(others))
+        self.log(f'click on {target.kind} {target.id}: calibration {outcome}')
+        if outcome in ('impossible', 'disagrees'):
+            # herdr focused this target, but not where the replica draws it.
+            self.stale[click['key']] = ('herdr focused a tab or Space where this replica does not draw it; '
+                                        'spring-loading is off for this window until a click agrees again')
+        elif target.kind in ('space', 'tab'):
+            self.stale.pop(click['key'], None)
+            # A first calibration fits almost any config, so only a click that
+            # agrees with an origin learned before confirms one (review H3).
+            if outcome in ('agrees', 'relearned'):
+                self.confirm_config(click, target, model)
+        self.report(calibrated=self.calibration.calibrated())
 
     # MARK: plugin registration
 
@@ -368,18 +555,39 @@ class Engine:
         config_dir, _ = clients.herdr_dirs(self.env, self.platform)
         state = registration.registration(config_dir)
         seen = self.support/'registered-seen'
-        if state == 'registered' and not seen.exists():
+        if state == 'registered':
+            self.missing_since = None
+            manifest = registration.manifest_path(config_dir)
             try:
-                self.support.mkdir(parents=True, exist_ok=True)
-                seen.touch()
-            except OSError:
-                pass
-        decision = registration.action(state, seen.exists())
-        if decision == 'run':
+                recorded = json.loads(seen.read_text()).get('manifest') if seen.exists() else None
+            except (OSError, ValueError, AttributeError):
+                recorded = None
+            if recorded != manifest:
+                try:
+                    self.support.mkdir(parents=True, exist_ok=True)
+                    seen.write_text(json.dumps({'manifest': manifest}))
+                except OSError:
+                    pass
             return True
+        decision = registration.action(state, seen.exists())
         if decision == 'remove':
-            self.remove_self()
+            # herdr plugin update or a reinstall may rewrite plugins.json without
+            # the entry for a moment: confirm twice, and only once the plugin's
+            # install directory is gone.
+            now = self.clock()
+            if self.missing_since is None:
+                self.missing_since = now
+            try:
+                recorded = json.loads(seen.read_text()).get('manifest')
+            except (OSError, ValueError, AttributeError):
+                recorded = None
+            if now - self.missing_since >= REMOVAL_CONFIRM and recorded and not Path(recorded).parent.exists():
+                self.remove_self()
+                return False
+            self.report('paused', 'the plugin is no longer registered with herdr; the helper removes itself once '
+                                  'that is confirmed and the plugin folder is gone')
             return False
+        self.missing_since = None
         self.report('paused', f'spring-loading is paused: {registration.REASONS[state]}')
         return False
 

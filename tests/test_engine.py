@@ -92,6 +92,16 @@ class FakeHerdr:
                 self.subscribers.remove(conn)
                 conn.close()
 
+    def user_focus(self, method, **params):
+        """What a user's click does in herdr: change focus, then emit all three
+        focus events (herdr's emit_focus_api_events), whatever level changed."""
+        with self.lock:
+            self.apply(method, params)
+            s = self.snapshot
+        self.publish('workspace_focused', workspace_id=s['focused_workspace_id'])
+        self.publish('tab_focused', tab_id=s['focused_tab_id'], workspace_id=s['focused_workspace_id'])
+        self.publish('pane_focused', pane_id=s['focused_pane_id'], workspace_id=s['focused_workspace_id'])
+
     def focus_calls(self):
         with self.lock:
             return [(m, p) for m, p in self.calls if m.endswith('.focus')]
@@ -145,10 +155,12 @@ class EngineTest(unittest.TestCase):
         self.server = FakeHerdr(self.config/'herdr.sock', GOLDEN['snapshot'])
         self.addCleanup(self.server.close)
         self.window_xy = (100.0, 50.0)
+        self.client_started = time.time() + 60   # the client started after config.toml was written
 
     def client(self, pid=4242, argv=('herdr',), env=None):
         return {'pid': pid, 'argv': list(argv), 'tty': f'/dev/ttys{pid % 1000:03d}', 'rows': 40, 'cols': 120,
-                'xpixel': 120 * CELL_W, 'ypixel': 40 * CELL_H, 'foreground': True, 'env': env if env is not None else self.env}
+                'xpixel': 120 * CELL_W, 'ypixel': 40 * CELL_H, 'foreground': True, 'env': env if env is not None else self.env,
+                'started': self.client_started}
 
     def window(self, clients=None, peers=()):
         x, y = self.window_xy
@@ -174,10 +186,10 @@ class EngineTest(unittest.TestCase):
         steps.append((t + 0.05, {'type': 'drag_end', 'x': 0, 'y': 0, 'reason': 'released'}))
         return steps
 
-    def run_engine(self, steps, uninstall=None):
+    def run_engine(self, steps, uninstall=None, log=None):
         sensor = ScriptedSensor(steps)
         engine = core.Engine(sensor, self.temp/'support', env=self.env, clock=sensor.clock,
-                             list_processes=lambda: None, uninstall=uninstall)
+                             list_processes=lambda: None, uninstall=uninstall, log=log)
         engine.run(until=sensor.done)
         return engine
 
@@ -236,14 +248,16 @@ class EngineTest(unittest.TestCase):
         # The user clicks the first tab normally; herdr reports the focus; the core learns.
         first = model.find('tab', next(t['tab_id'] for t in self.server.snapshot['tabs'] if t['label'] == '1'))
         cx, cy = self.point(first.rect.x + 2, 0)
-        steps = [(0.2, {'type': 'click', 'x': cx, 'y': cy, 'window': self.window()}),
-                 (0.25, lambda: self.server.publish('tab_focused', tab_id=first.id, workspace_id='w1')),
-                 (0.26, lambda: self.server.publish('pane_focused', pane_id='w1:p1', workspace_id='w1'))]
+        # herdr focuses on mouse up, before the sensor reports the click (review H2),
+        # and sends workspace, tab and pane events though only the tab changed (H1).
+        steps = [(0.15, lambda: self.server.user_focus('tab.focus', tab_id=first.id)),
+                 (0.2, {'type': 'click', 'x': cx, 'y': cy, 'window': self.window()})]
+        self.server.calls.clear()
         engine = self.run_engine(steps + self.drag(1.5, [(tab_point, 1.0)]))
         self.assertEqual(engine.status['calibrated'], 1)
         self.assertEqual(self.server.focus_calls(), [('tab.focus', {'tab_id': files['tab_id']})])
         stored = json.loads((self.temp/'support/calibration.json').read_text())
-        low, high = list(stored.values())[0][2:]
+        low, high = list(stored.values())[0]['origin'][2:]
         self.assertLessEqual(low, TITLEBAR)
         self.assertGreaterEqual(high, TITLEBAR)
         self.assertLessEqual(high - low, CELL_H / 2)
@@ -263,12 +277,23 @@ class EngineTest(unittest.TestCase):
         # Two ordinary clicks on the "assets" row (top and bottom of the row) calibrate the titlebar.
         x0 = self.window_xy[0] + 5 * CELL_W
         top = self.window_xy[1] + TITLEBAR + row_of(assets) * CELL_H + 2
-        steps = [(0.2, {'type': 'click', 'x': x0, 'y': top, 'window': self.window()}),
-                 (0.25, lambda: self.server.publish('workspace_focused', workspace_id=assets['workspace_id'])),
-                 (1.0, {'type': 'click', 'x': x0, 'y': top + CELL_H - 4, 'window': self.window()}),
-                 (1.05, lambda: self.server.publish('workspace_focused', workspace_id=assets['workspace_id']))]
-        engine = self.run_engine(steps)
-        low, high = list(json.loads((self.temp/'support/calibration.json').read_text()).values())[0][2:]
+        # Each click on "assets" follows a move away from it (by keyboard, say) well before.
+        project_ws = project['workspace_id']
+        steps = [(0.1, lambda: self.server.user_focus('workspace.focus', workspace_id=project_ws)),
+                 (0.75, lambda: self.server.user_focus('workspace.focus', workspace_id=assets['workspace_id'])),
+                 (0.8, {'type': 'click', 'x': x0, 'y': top, 'window': self.window()}),
+                 (1.6, lambda: self.server.user_focus('workspace.focus', workspace_id=project_ws)),
+                 (2.2, {'type': 'click', 'x': x0, 'y': top + CELL_H - 4, 'window': self.window()}),
+                 (2.25, lambda: self.server.user_focus('workspace.focus', workspace_id=assets['workspace_id']))]
+        lines = []
+        self.run_engine(steps, log=lines.append)
+        self.server.calls.clear()
+        outcomes = [l.split('calibration ')[1] for l in lines if 'calibration ' in l]
+        # Review N1: each click is attributed to the Space actually clicked. "assets" is the
+        # last row, so no other Space lies in the first click's uncertainty: it counts at once.
+        self.assertEqual(outcomes, ['learned', 'agrees'])
+        self.assertTrue(all(f"space {assets['workspace_id']}" in l for l in lines if 'calibration ' in l))
+        low, high = list(json.loads((self.temp/'support/calibration.json').read_text()).values())[0]['origin'][2:]
         self.assertLessEqual(high - low, 3)
         # Pointer path: the "project" row, then the "files" tab, then the pane that is not focused there.
         def centre(rect):
@@ -288,6 +313,158 @@ class EngineTest(unittest.TestCase):
                                                      ('tab.focus', {'tab_id': tabs['files']['tab_id']}),
                                                      ('pane.focus', {'pane_id': files_panes[1]})])
 
+    def tab_setup(self):
+        model = render.build_model(120, 40, self.server.snapshot, render.ui_from_config({'ui': {}}), render.Preferences())
+        tab = lambda label: next(t['tab_id'] for t in self.server.snapshot['tabs'] if t['label'] == label)
+        files = model.find('tab', tab('a much longer tab name'))
+        first = model.find('tab', tab('1'))
+        tab_point = (self.point(files.rect.x + files.rect.width // 2, 0)[0], self.window_xy[1] + TITLEBAR + 3)
+        click = self.point(first.rect.x + 2, 0)
+        return files, first, tab_point, click
+
+    def test_click_attribution_uses_the_level_that_changed(self):
+        # Review H1: herdr emits all three events; the shallowest *changed* level counts.
+        engine = core.Engine(ScriptedSensor([]), self.temp/'support', env=self.env, clock=lambda: 10.0)
+        engine.focus['s'] = {'space': 'w1', 'tab': 't1', 'pane': 'p1'}
+        def burst(at, ws, tab, pane):
+            for kind, value in (('workspace_focused', {'workspace_id': ws}), ('tab_focused', {'tab_id': tab}),
+                                ('pane_focused', {'pane_id': pane})):
+                engine.events.put((at, 's', {'event': kind, 'data': value}))
+            engine.drain_herdr_events()
+        burst(9.0, 'w1', 't2', 'p2')
+        self.assertEqual(engine.attribute({'at': 9.1, 'socket': 's'}), ('tab', 't2'))
+        burst(9.0, 'w1', 't2', 'p3')
+        self.assertEqual(engine.attribute({'at': 9.1, 'socket': 's'}), ('pane', 'p3'))
+        burst(9.0, 'w2', 't9', 'p9')
+        self.assertEqual(engine.attribute({'at': 9.1, 'socket': 's'}), ('space', 'w2'))
+        burst(9.0, 'w3', 't3', 'p30')
+        burst(9.1, 'w4', 't4', 'p40')
+        self.assertIsNone(engine.attribute({'at': 9.2, 'socket': 's'}), 'two Spaces in one burst (review N1)')
+        burst(9.0, 'w2', 't9', 'p8')
+        burst(9.5, 'w2', 't9', 'p7')
+        self.assertIsNone(engine.attribute({'at': 9.3, 'socket': 's'}), 'two focus changes near one click')
+        self.assertIsNone(engine.attribute({'at': 5.0, 'socket': 's'}), 'nothing near')
+
+    def test_focus_event_after_the_click_also_calibrates(self):
+        # Review H2: both orders.
+        files, first, tab_point, (cx, cy) = self.tab_setup()
+        steps = [(0.2, {'type': 'click', 'x': cx, 'y': cy, 'window': self.window()}),
+                 (0.3, lambda: self.server.user_focus('tab.focus', tab_id=first.id))]
+        engine = self.run_engine(steps + self.drag(1.5, [(tab_point, 1.0)]))
+        self.assertEqual(engine.status['calibrated'], 1)
+        self.assertIn(('tab.focus', {'tab_id': files.id}), self.server.focus_calls())
+
+    def test_config_newer_than_the_client_is_refused_until_clicks_confirm(self):
+        # Review H3: the client may still show the config it started with. A click
+        # proves only its own kind, and only once an origin was learned before it.
+        self.client_started = time.time() - 3600
+        target = self.other_pane()
+        engine = self.run_engine(self.drag(0.5, [(self.pane_point(target), 0.8)]))
+        self.assertEqual(self.server.focus_calls(), [])
+        self.assertIn("config changed after this herdr client started", engine.status['reason'])
+        files, first, tab_point, (cx, cy) = self.tab_setup()
+        s = self.server.snapshot
+        ws = {w['label']: w for w in s['workspaces']}
+        model = render.build_model(120, 40, s, render.ui_from_config({'ui': {}}), render.Preferences())
+        space_rect = model.find('space', ws['assets']['workspace_id']).rect
+        space_point = (self.window_xy[0] + 5 * CELL_W, self.window_xy[1] + TITLEBAR + (space_rect.y + 0.5) * CELL_H)
+        def tab_clicks(at):
+            return [(at, lambda: self.server.user_focus('tab.focus', tab_id=first.id)),
+                    (at + 0.05, {'type': 'click', 'x': cx, 'y': cy, 'window': self.window()}),
+                    (at + 0.8, lambda: self.server.user_focus('tab.focus', tab_id=files.id)),
+                    (at + 1.5, lambda: self.server.user_focus('tab.focus', tab_id=first.id)),
+                    (at + 1.55, {'type': 'click', 'x': cx, 'y': cy - 4, 'window': self.window()})]
+        self.server.calls.clear()
+        engine = self.run_engine(tab_clicks(0.1) + self.drag(3.0, [(space_point, 1.0), (tab_point, 1.0)]))
+        self.assertEqual(self.server.focus_calls(), [('tab.focus', {'tab_id': files.id})],
+                         'two tab clicks confirm tabs (and panes), not the Space rows')
+        self.assertIn('Space below the first', json.dumps(engine.status.get('refused')))
+        # A click on a Space below the first, agreeing with the stored origin, confirms the Space rows.
+        here, away = ws['assets']['workspace_id'], ws['project']['workspace_id']
+        # Upper part of the "project" row: the calibrated origin leaves under half a row of doubt.
+        project_point = (space_point[0], self.window_xy[1] + TITLEBAR + (space_rect.y - 1) * CELL_H + 4)
+        steps = [(0.1, lambda: self.server.user_focus('workspace.focus', workspace_id=here)),
+                 (0.15, {'type': 'click', 'x': space_point[0], 'y': space_point[1], 'window': self.window()})]
+        self.server.calls.clear()
+        lines = []
+        engine = self.run_engine(steps + self.drag(1.5, [(project_point, 1.0)]), log=lines.append)
+        self.assertEqual(self.server.focus_calls(), [('workspace.focus', {'workspace_id': away})], (lines, engine.status))
+        self.assertEqual(lines[0], f'click on space {here}: calibration agrees')
+
+    def test_first_space_click_never_confirms_space_rows_and_unknown_stamp_refuses(self):
+        # Review H3: spaces.rows and row_gap move only the Spaces below the first.
+        # Review N4: a config whose change time cannot be read is not trusted.
+        engine = core.Engine(ScriptedSensor([]), self.temp/'support', env=self.env)
+        model = render.build_model(120, 40, self.server.snapshot, render.ui_from_config({'ui': {}}), render.Preferences())
+        spaces = sorted((t for t in model.targets if t.kind == 'space'), key=lambda t: t.rect.y)
+        binding = core.clients.bind(self.client(), {})
+        click = {'binding': binding, 'client': self.client()}
+        engine.confirm_config(click, spaces[0], model)
+        stamp, kinds = engine.verified[(4242, str(binding.config_path))]
+        self.assertEqual(kinds, set())
+        engine.confirm_config(click, spaces[1], model)
+        self.assertEqual(engine.verified[(4242, str(binding.config_path))][1], {'space'})
+        engine.config_stamp = lambda path: None
+        with self.assertRaises(core.Unavailable):
+            engine.check_config(binding, self.client())
+
+    def test_click_where_the_replica_draws_nothing_turns_the_window_off(self):
+        # Review H3: herdr focused a tab, but the click was far below the tab bar.
+        files, first, tab_point, _ = self.tab_setup()
+        cx, cy = self.point(first.rect.x + 2, 30)
+        steps = [(0.15, lambda: self.server.user_focus('tab.focus', tab_id=first.id)),
+                 (0.2, {'type': 'click', 'x': cx, 'y': cy, 'window': self.window()})]
+        self.server.calls.clear()
+        engine = self.run_engine(steps + self.drag(1.5, [(self.pane_point(self.other_pane()), 0.8)]))
+        self.assertEqual(self.server.focus_calls(), [])
+        self.assertIn('does not draw it', engine.status['reason'])
+
+    def test_changed_identity_cwd_unsettles_the_branch_row(self):
+        # Review M2
+        engine = core.Engine(ScriptedSensor([]), self.temp/'support', env=self.env)
+        self.assertTrue(engine.branch_settled('s', 'w1', str(self.temp)))
+        self.assertTrue(engine.branch_settled('s', 'w1', str(self.temp)))
+        self.assertFalse(engine.branch_settled('s', 'w1', str(self.temp/'c')), 'the cwd just changed')
+        repo = self.temp/'repo'
+        (repo/'.git').mkdir(parents=True)
+        (repo/'.git/HEAD').write_text('ref: refs/heads/main\n')
+        self.assertFalse(engine.branch_settled('s', 'w2', str(repo)), 'HEAD just moved')
+        os.utime(repo/'.git/HEAD', (time.time() - 60, time.time() - 60))
+        self.assertTrue(engine.branch_settled('s', 'w2', str(repo)))
+
+    def test_ambiguous_first_space_click_is_only_a_candidate(self):
+        # Review N1: before calibration a click on "project" may be on the "assets" row
+        # below it, so one click is not proof; a second agreeing click confirms it.
+        s = self.server.snapshot
+        ws = {w['label']: w for w in s['workspaces']}
+        model = render.build_model(120, 40, s, render.ui_from_config({'ui': {}}), render.Preferences())
+        y0 = model.find('space', ws['project']['workspace_id']).rect.y
+        x0 = self.window_xy[0] + 5 * CELL_W
+        top = self.window_xy[1] + TITLEBAR + y0 * CELL_H + 2
+        away, here = ws['assets']['workspace_id'], ws['project']['workspace_id']
+        steps = [(0.1, lambda: self.server.user_focus('workspace.focus', workspace_id=away)),
+                 (0.75, lambda: self.server.user_focus('workspace.focus', workspace_id=here)),
+                 (0.8, {'type': 'click', 'x': x0, 'y': top, 'window': self.window()}),
+                 (1.6, lambda: self.server.user_focus('workspace.focus', workspace_id=away)),
+                 (2.2, {'type': 'click', 'x': x0, 'y': top + CELL_H - 4, 'window': self.window()}),
+                 (2.25, lambda: self.server.user_focus('workspace.focus', workspace_id=here))]
+        lines = []
+        engine = self.run_engine(steps, log=lines.append)
+        self.assertEqual([l.split('calibration ')[1] for l in lines if 'calibration ' in l], ['candidate', 'learned'])
+        self.assertEqual(engine.status['calibrated'], 1)
+
+    def test_identity_baseline_is_taken_when_subscribing(self):
+        # Review M2 residual: a cd between helper start and the first drag is a change.
+        engine = core.Engine(ScriptedSensor([]), self.temp/'support', env=self.env)
+        sock = self.config/'herdr.sock'
+        engine.ensure_subscription(sock)
+        self.addCleanup(lambda: [sub.close() for sub in engine.subscriptions.values()])
+        workspace = self.server.snapshot['workspaces'][0]['workspace_id']
+        cwd = render.identity_cwd(self.server.snapshot, workspace)
+        self.assertIsNotNone(cwd)
+        self.assertTrue(engine.branch_settled(sock, workspace, cwd))
+        self.assertFalse(engine.branch_settled(sock, workspace, cwd + '/elsewhere'))
+
     def test_unknown_herdr_version_is_inert(self):
         self.server.snapshot['version'] = '0.10.0'
         engine = self.run_engine(self.drag(0.5, [(self.pane_point(self.other_pane()), 0.8)]))
@@ -301,15 +478,42 @@ class EngineTest(unittest.TestCase):
         self.assertEqual(self.server.focus_calls(), [])
         self.assertEqual(engine.status['state'], 'paused')
 
-    def test_uninstalled_plugin_removes_the_helper(self):
-        (self.temp/'support').mkdir()
-        (self.temp/'support/registered-seen').touch()
+    def seen_registered(self, manifest):
+        (self.temp/'support').mkdir(exist_ok=True)
+        (self.temp/'support/registered-seen').write_text(json.dumps({'manifest': str(manifest)}))
         (self.config/'plugins.json').write_text('[]')
+
+    def two_drags(self):
+        point = self.pane_point(self.other_pane())
+        return self.drag(0.5, [(point, 0.3)]) + self.drag(4.5, [(point, 0.3)])
+
+    def test_uninstalled_plugin_removes_the_helper(self):
+        # Review M4: missing twice, 3 s apart, and the plugin folder is gone.
+        self.seen_registered(self.temp/'gone/herdr-plugin.toml')
         calls = []
-        engine = self.run_engine(self.drag(0.5, [(self.pane_point(self.other_pane()), 0.8)]), uninstall=lambda: calls.append(1) or 0)
+        engine = self.run_engine(self.two_drags(), uninstall=lambda: calls.append(1) or 0)
         self.assertEqual(calls, [1])
         self.assertTrue(engine.removed)
         self.assertEqual(self.server.focus_calls(), [])
+
+    def test_transient_missing_registration_keeps_the_helper(self):
+        self.seen_registered(self.temp/'gone/herdr-plugin.toml')
+        calls = []
+        engine = self.run_engine(self.drag(0.5, [(self.pane_point(self.other_pane()), 0.8)]),
+                                 uninstall=lambda: calls.append(1) or 0)
+        self.assertEqual(calls, [], 'one missing reading is not enough')
+        self.assertEqual(engine.status['state'], 'paused')
+
+    def test_missing_registration_with_plugin_folder_present_keeps_the_helper(self):
+        self.seen_registered(ROOT/'herdr-plugin.toml')   # an update rewriting plugins.json
+        calls = []
+        self.run_engine(self.two_drags(), uninstall=lambda: calls.append(1) or 0)
+        self.assertEqual(calls, [])
+
+    def test_registration_records_the_manifest(self):
+        self.run_engine(self.drag(0.5, [(self.pane_point(self.other_pane()), 0.5)]))
+        seen = json.loads((self.temp/'support/registered-seen').read_text())
+        self.assertEqual(seen['manifest'], str(ROOT/'herdr-plugin.toml'))
 
     def test_not_yet_registered_only_pauses(self):
         (self.config/'plugins.json').write_text('[]')
@@ -318,23 +522,3 @@ class EngineTest(unittest.TestCase):
         self.assertEqual(calls, [])
         self.assertEqual(engine.status['state'], 'paused')
 
-class GeometryTest(unittest.TestCase):
-    def test_fit_picks_the_unit_and_refuses_ambiguity(self):
-        client = {'cols': 239, 'rows': 68, 'xpixel': 1916, 'ypixel': 1160}
-        grid = geometry.fit((1920, 1164), client, 2.0)
-        self.assertAlmostEqual(grid.cell_width, 1916 / 239)
-        self.assertEqual((grid.origin_x.high, grid.origin_y.high), (4, 4))
-        self.assertIsNone(geometry.fit((1000, 1164), client, 2.0), 'grid wider than the window')
-        self.assertIsNone(geometry.fit((1920, 1164), {**client, 'xpixel': 0}, 2.0), 'no pixel size')
-        retina = geometry.fit((960, 600), {'cols': 100, 'rows': 30, 'xpixel': 1904, 'ypixel': 1080}, 2.0)
-        self.assertAlmostEqual(retina.cell_width, 9.52)
-
-    def test_resolve_needs_agreement(self):
-        model = render.Model(10, 10, [render.Target('pane', 'a', render.Rect(0, 1, 5, 9)), render.Target('pane', 'b', render.Rect(5, 1, 5, 9)),
-                                      render.Target('tab', 't', render.Rect(0, 0, 10, 1))])
-        grid = geometry.Grid(10, 10, 10, 10, geometry.Interval(0, 5), geometry.Interval(0, 15))
-        self.assertEqual(geometry.resolve(model, grid, 25, 60).id, 'a')
-        self.assertIsNone(geometry.resolve(model, grid, 52, 60), 'straddles two panes')
-        self.assertIsNone(geometry.resolve(model, grid, 25, 12), 'row 0 or row 1')
-        calibrated = grid.narrowed(geometry.Interval(0, 0), geometry.Interval(2, 3))
-        self.assertEqual(geometry.resolve(model, calibrated, 25, 9).id, 't')

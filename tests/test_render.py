@@ -188,6 +188,41 @@ class ReplicaRulesTest(unittest.TestCase):
         self.assertIn('space', model.refused)
         self.assertNotIn('tab', model.refused)
 
+    def test_unsettled_branch_refuses_spaces(self):
+        # Review M2: herdr's git cache may still lag a cwd that just changed.
+        record, _, ui = load('git_rows')
+        model = render.build_model(record['cols'], record['rows'], record['snapshot'], ui, render.Preferences(),
+                                   branch_settled=lambda workspace_id, cwd: False)
+        self.assertIn('space', model.refused)
+
+    def test_snapshot_order_not_number_order(self):
+        # Review L4: herdr draws spaces and tabs in snapshot (index) order.
+        record, _, ui = load('spaces_tabs')
+        snapshot = json.loads(json.dumps(record['snapshot']))
+        for i, w in enumerate(snapshot['workspaces']):
+            w['number'] = 100 - i
+        args = (record['cols'], record['rows'])
+        before = render.build_model(*args, record['snapshot'], ui, render.Preferences())
+        after = render.build_model(*args, snapshot, ui, render.Preferences())
+        self.assertEqual([t.rect for t in before.targets if t.kind == 'space'],
+                         [t.rect for t in after.targets if t.kind == 'space'])
+
+    def test_git_walk_skips_git_dirs_without_head_and_refuses_bare(self):
+        # Review L1
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            (root/'.git').mkdir()
+            (root/'.git/HEAD').write_text('ref: refs/heads/main\n')
+            inner = root/'sub'
+            (inner/'.git').mkdir(parents=True)        # no HEAD: herdr keeps walking up
+            self.assertIs(render.git_branch_present(str(inner)), True)
+            self.assertEqual(render.git_head_path(str(inner)), root/'.git/HEAD')
+            bare = root/'bare.git'
+            for d in ('objects', 'refs'):
+                (bare/d).mkdir(parents=True)
+            (bare/'HEAD').write_text('ref: refs/heads/main\n')
+            self.assertIsNone(render.git_branch_present(str(bare)))
+
     def test_runtime_status_entries_refuse_tabs(self):
         record, _, _ = load('default')
         ui = render.ui_from_config({'ui': {'tab_bar_right': [{'type': 'datetime'}]}})
