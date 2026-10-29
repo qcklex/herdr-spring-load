@@ -7,36 +7,58 @@ observes, and selects through herdr's own API.
 
 ### Added
 - A sensor per OS that observes the drag, the pointer, the window under it
-  and that window's herdr clients, and prints NDJSON (docs/SENSOR.md). The
-  macOS sensor asks for no permission. It finds herdr clients under the
-  terminal's own processes, inside tmux, and under the terminal's session
-  server (macOS's responsible process).
+  and that window's herdr clients, and prints NDJSON (docs/SENSOR.md).
+- macOS sensor, with no permission. It reads the pointer and mouse buttons,
+  the drag pasteboard's change count and type names (never its contents),
+  window bounds without window names, and herdr client processes with their
+  tty size, start time and a short list of environment variables. It finds
+  herdr clients under the terminal's own processes, inside tmux, and under
+  the terminal's session server (macOS's responsible process); this partly
+  lifts the "below the window's process" limit. It reports how many terminal
+  sessions the window's app runs, so tabs and splits turn spring-loading
+  off.
 - A shared core in standard-library Python: a replica of herdr 0.9.3's
   sidebar, tab bar and pane layout (checked against golden screens, and
   acting only on herdr versions it was checked against), calibration from
   ordinary clicks and herdr's focus events, and herdr's public
   `workspace.focus`, `tab.focus` and `pane.focus` as the only actions.
 - The core reaches herdr over its named pipe on Windows.
-- Linux: an X11 sensor (stdlib Python, packed as a zipapp; Hyprland reports
-  windows and clients only, and stays inert), installed as a systemd user
-  unit. Install needs python3 only.
-- Windows (experimental, not yet run on Windows): a sensor packed behind
-  pip's script launcher, a per-user Run key login entry, and the
-  `status-windows`, `setup-windows` and `remove-helper-windows` entries.
-  Install runs `python -B setup.py`.
+- Linux sensor for X11 (stdlib Python, packed as a zipapp), installed as a
+  systemd user unit. Install needs python3 only. On Hyprland it is detected
+  but inert: it sees windows and clients, but no drag. Other Wayland
+  compositors are not supported.
+- Windows sensor (experimental, unit tested with faked Win32, not yet run on
+  Windows): per-monitor DPI aware, a drag heuristic from the mouse capture
+  and the cursor, the console size through a short-lived probe, and the
+  client environment from the process's PEB. With herdr in a tabbed
+  terminal it works only with herdr alone in its window. It is packed
+  behind pip's script launcher and starts from a per-user Run key entry;
+  the plugin entries are `status-windows`, `setup-windows` and
+  `remove-helper-windows`. Install runs `python -B setup.py`.
 - The manifest declares macos, linux and windows, with per-platform build
   steps, actions and setup panes.
 - The status action says when the helper is not running (the core holds a
   lock while it runs, so only one helper runs per user).
-- The status action reports which targets are off and why.
+- The status action reports whether the helper is running, what it is
+  doing, the last reason it refused to act, which kinds of target are off
+  and why, how many window shapes are calibrated, and the last navigation.
+- Dwell times as setup options: `--tab-dwell-ms` (Spaces and tabs, default
+  600) and `--pane-dwell-ms` (default 250).
 
 ### Changed
 - Navigation acts only when exactly one local client is attached to the
   session; otherwise nothing happens and the status action says why.
-- Spaces and tabs need one ordinary click on a different tab or Space per
-  window size first. Panes work right away.
-- After a herdr config change, a click confirms which config a running
-  client shows.
+- Tabs and Spaces need an ordinary click per window size first: a different
+  tab once, or a different Space twice. Panes work right away.
+- After a herdr config change, clicks confirm which config a running client
+  shows: a click confirms only when it lands where the stored calibration
+  agrees, and it never moves that calibration.
+- Run herdr alone in its terminal window: an app with more sessions than
+  visible windows (tabs, splits) is refused, because herdr in a hidden tab
+  could be navigated.
+- Setup removes 0.2.0's private keybindings from the herdr config, saving
+  `config.toml.spring-load-0.2.bak` first, and deletes 0.2.0's signing
+  keychain.
 - Self-removal after `herdr plugin uninstall` needs two checks at least 3 s
   apart and the registered checkout gone.
 
