@@ -30,7 +30,10 @@ jobs:
         with:
           python-version: '3.12'
 
+      # Every evidence step below runs whatever happened before it, so one run
+      # gives all the evidence; any required step that fails still fails the job.
       - name: Download herdr for Windows
+        id: herdr
         run: |
           $zip = Join-Path $env:RUNNER_TEMP 'herdr.zip'
           $url = "https://github.com/herdrdev/herdr/releases/download/v$env:HERDR_VERSION/herdr-windows-x86_64.zip"
@@ -45,22 +48,28 @@ jobs:
           Add-Content $env:GITHUB_PATH $exe.DirectoryName
 
       - name: Unit suite (modules that run on Windows)
+        if: ${{ !cancelled() }}
         run: python tests/windows/unit.py
 
       - name: Unit suite (everything, informational)
+        if: ${{ !cancelled() }}
         continue-on-error: true
         run: python tests/windows/unit.py --all
 
       - name: E2E against herdr over the named pipe (real Win32)
+        if: ${{ !cancelled() && steps.herdr.outcome == 'success' }}
         run: python tests/windows/e2e.py
 
       - name: Plugin build, status and remove in a scratch profile
+        if: ${{ !cancelled() }}
         run: python tests/windows/plugin_steps.py
 
       - name: Sensor output against the contract
+        if: ${{ !cancelled() }}
         run: python tests/windows/sensor_check.py --seconds 4 --name checkout-sensor -- python sensors/windows/run_sensor.py --verbose
 
       - name: SendInput drag simulation (best effort)
+        if: ${{ !cancelled() }}
         continue-on-error: true
         run: python tests/windows/drag_probe.py
 
@@ -93,6 +102,7 @@ jobs:
         run: python -m unittest discover -s tests -v
 
       - name: Linux E2E in Docker (X11, xterm, GTK drag source)
+        if: ${{ !cancelled() }}
         run: sh tests/linux/run.sh "$RUNNER_TEMP/linux-e2e"
 
       - name: Upload Linux E2E output
@@ -120,6 +130,7 @@ jobs:
         run: python -m unittest discover -s tests -v
 
       - name: Build the Swift sensor and check its hello
+        if: ${{ !cancelled() }}
         run: |
           out="$RUNNER_TEMP/herdr-spring-load-sensor-macos"
           python -c "import importlib.util, sys; spec = importlib.util.spec_from_file_location('b', 'sensors/macos/build.py'); m = importlib.util.module_from_spec(spec); spec.loader.exec_module(m); m.build(__import__('pathlib').Path(sys.argv[1]))" "$out"

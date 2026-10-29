@@ -36,9 +36,6 @@ def all_dlls(**overrides):
         dlls[dll] = FakeDLL(**functions)
     return dlls
 
-POINTER_SIZED_FIELDS = {'th32DefaultHeapID', 'PebBaseAddress', 'AffinityMask', 'UniqueProcessId',
-                        'InheritedFromUniqueProcessId'}
-
 class StructLayoutTest(unittest.TestCase):
     def test_sizes_match_64_bit_windows(self):
         expected = {structs.POINT: 8, structs.RECT: 16, structs.CURSORINFO: 24, structs.GUITHREADINFO: 72,
@@ -56,16 +53,30 @@ class StructLayoutTest(unittest.TestCase):
         self.assertEqual(structs.PROCESS_BASIC_INFORMATION.PebBaseAddress.offset, 8)
         self.assertEqual(structs.PROCESS_BASIC_INFORMATION.UniqueProcessId.offset, 32)
 
-    def test_no_platform_dependent_field_types(self):
-        for struct in (structs.POINT, structs.RECT, structs.CURSORINFO, structs.GUITHREADINFO,
-                       structs.PROCESSENTRY32W, structs.CONSOLE_SCREEN_BUFFER_INFO, structs.PROCESS_BASIC_INFORMATION):
-            for name, kind in struct._fields_:
+    def test_field_widths_match_64_bit_windows(self):
+        # Widths, not type identity: c_int32 is c_long on Windows (LLP64) and
+        # c_uint64 is c_ulong on LP64, so an identity check fails on one or the other.
+        widths = {
+            structs.POINT: {'x': 4, 'y': 4},
+            structs.RECT: {'left': 4, 'top': 4, 'right': 4, 'bottom': 4},
+            structs.CURSORINFO: {'cbSize': 4, 'flags': 4, 'hCursor': 8, 'ptScreenPos': 8},
+            structs.GUITHREADINFO: {'cbSize': 4, 'flags': 4, 'hwndActive': 8, 'hwndFocus': 8, 'hwndCapture': 8,
+                                    'hwndMenuOwner': 8, 'hwndMoveSize': 8, 'hwndCaret': 8, 'rcCaret': 16},
+            structs.PROCESSENTRY32W: {'dwSize': 4, 'cntUsage': 4, 'th32ProcessID': 4, 'th32DefaultHeapID': 8,
+                                      'th32ModuleID': 4, 'cntThreads': 4, 'th32ParentProcessID': 4, 'pcPriClassBase': 4,
+                                      'dwFlags': 4, 'szExeFile': 520},
+            structs.CONSOLE_SCREEN_BUFFER_INFO: {'dwSize': 4, 'dwCursorPosition': 4, 'wAttributes': 2, 'srWindow': 8,
+                                                 'dwMaximumWindowSize': 4},
+            structs.PROCESS_BASIC_INFORMATION: {'ExitStatus': 4, '_pad0': 4, 'PebBaseAddress': 8, 'AffinityMask': 8,
+                                                'BasePriority': 4, '_pad1': 4, 'UniqueProcessId': 8,
+                                                'InheritedFromUniqueProcessId': 8},
+        }
+        for struct, expected in widths.items():
+            fields = dict(struct._fields_)
+            self.assertEqual(set(fields), set(expected), struct.__name__)
+            for name, kind in fields.items():
+                self.assertEqual(ctypes.sizeof(kind), expected[name], f'{struct.__name__}.{name}')
                 self.assertIsNot(kind, ctypes.c_wchar, name)
-                if kind in (ctypes.c_long, ctypes.c_ulong):
-                    # Only pointer-sized fields may be one: ULONG_PTR (c_size_t) and the
-                    # c_uint64 pointers, both aliases of c_ulong on LP64.
-                    self.assertIn(name, POINTER_SIZED_FIELDS)
-                    self.assertEqual(ctypes.sizeof(kind), 8, name)
 
     def test_wide_text(self):
         entry = structs.PROCESSENTRY32W()
