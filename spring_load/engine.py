@@ -36,8 +36,8 @@ UNCONFIRMED = {
     'tab': "herdr's config changed after this herdr client started, so the plugin cannot tell which config it shows. "
            'Click a different tab twice (or restart the client) to confirm',
     'pane': "herdr's config changed after this herdr client started; click a different tab twice to confirm the panes",
-    'space': "herdr's config changed after this herdr client started; click a Space below the first one twice "
-             'to confirm the Space rows'}
+    'space': "herdr's config changed after this herdr client started; click a Space below the first one twice, "
+             'once on its top row and once on its bottom row, to confirm the Space rows'}
 REMOVAL_CONFIRM = 3.0
 
 @dataclass
@@ -114,7 +114,8 @@ class Engine:
         self.pending_clicks = []
         self.last_drag_end = -1e9
         self.next_discover = -1e9
-        self.verified = {}         # (client pid, config path) -> config stamp a click confirmed
+        self.verified = {}         # (client pid, config path) -> (config stamp, kinds clicks confirmed)
+        self.space_rows = {}       # (client pid, config path) -> (config stamp, Space rows clicks contained)
         self.stale = {}            # calibration key -> why the replica disagreed with herdr
         self.identities = {}       # (api socket, workspace id) -> (identity cwd, when it changed)
         self.starts = {}           # client pid -> process start (epoch seconds) or None
@@ -387,7 +388,7 @@ class Engine:
         says which. Everything is trusted when the file is older than the client
         process. Otherwise a calibration click that agreed with an origin stored
         earlier confirms only what it can prove: a tab click the tab bar and
-        the panes below it, a click on a Space below the first one the Space
+        the panes below it, clicks on Spaces below the first one the Space
         rows (spaces.rows and row_gap move only those)."""
         stamp = self.config_stamp(binding.config_path)
         if stamp is None:
@@ -402,6 +403,13 @@ class Engine:
         return allowed
 
     def confirm_config(self, click, target, model):
+        """The click contains the stored origin for `target`. A tab is one row
+        high, so one such click proves the tab bar. A Space can be two rows
+        high (a branch row), and a replica one row off still contains clicks
+        in the row both draw (review N9b): Space rows are confirmed only once
+        clicks on Spaces below the first were contained in a Space's first row
+        and in its last row, within one config stamp. One row high, one click
+        does both."""
         stamp = self.config_stamp(click['binding'].config_path)
         if stamp is None:
             return
@@ -413,7 +421,17 @@ class Engine:
         elif target.kind == 'space':
             first = min((t.rect.y for t in model.targets if t.kind == 'space'), default=None)
             if target.rect.y != first:
-                kinds.add('space')
+                seen = self.space_rows.get(key)
+                rows = set(seen[1]) if seen and seen[0] == stamp else set()
+                rect = target.rect
+                for row, y in (('first', rect.y), ('last', rect.bottom - 1)):
+                    if self.calibration.contains(click['key'], click['grid'], click['dx'], click['dy'],
+                                                 render.Rect(rect.x, y, rect.width, 1)):
+                        rows.add(row)
+                self.space_rows[key] = (stamp, rows)
+                self.log(f'Space rows contained so far: {", ".join(sorted(rows)) or "none"}')
+                if rows == {'first', 'last'}:
+                    kinds.add('space')
         self.verified[key] = (stamp, kinds)
 
     def branch_settled(self, api_socket, workspace_id, cwd):
@@ -571,6 +589,7 @@ class Engine:
         elif outcome == 'relearned':
             # The geometry changed under earlier confirmations: they are void.
             self.verified.pop((click['client']['pid'], str(click['binding'].config_path)), None)
+            self.space_rows.pop((click['client']['pid'], str(click['binding'].config_path)), None)
             self.stale.pop(click['key'], None)
         elif target.kind in ('space', 'tab'):
             self.stale.pop(click['key'], None)

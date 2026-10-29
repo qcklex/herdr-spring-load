@@ -122,8 +122,8 @@ all vary.
 
 - **Panes** are large enough that this does not matter, so pane focus works
   from the first drag.
-- **Tabs and Spaces** are one row high, so the plugin needs to learn the
-  offset first.
+- **Tabs and Spaces** are one row high (a Space with a git branch is two),
+  so the plugin needs to learn the offset first.
 
 To teach it, click a herdr tab or Space the normal way, with nothing held.
 Click one that is **not** already selected: herdr reports nothing when focus
@@ -259,9 +259,10 @@ same way. While the plugin is disabled, it pauses.
 - **Config changes.** When herdr's config changed after a client started,
   the plugin cannot tell which config that client shows, and refuses until
   clicks confirm it: click a different tab twice for tabs and panes, and a
-  Space below the first one twice for Spaces. A click confirms only when it
-  lands where every stored calibration agrees, so it can take another
-  click. Restarting the client also works.
+  Space below the first one twice for Spaces, once on its top row and once
+  on its bottom row (a Space with a git branch is two rows high). A click
+  confirms only when it lands where every stored calibration agrees, so it
+  can take another click. Restarting the client also works.
 - **A click that does not fit.** If herdr focuses a tab or Space where the
   calibration says it is not drawn, spring-loading stops for that window
   until you click a different tab or Space again and that click agrees.

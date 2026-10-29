@@ -86,8 +86,8 @@ Core modules:
 
 ## 4. Calibration from ordinary clicks
 
-Spaces and tabs are one row high, so they need the grid origin to within
-half a row. The plugin learns it from the user's own clicks, never from
+A tab is one row high and a Space one or two (two when it shows a git
+branch), so they need the grid origin to within half a row. The plugin learns it from the user's own clicks, never from
 synthetic ones.
 
 - The sensor reports clicks (button up, no drag held) with their position.
@@ -116,7 +116,7 @@ herdr loads its config when a client starts and on reload, with no event for
 either. If the config file is older than the client process, the client
 shows it. Otherwise the plugin cannot tell, and refuses until an ordinary
 click confirms it, per kind: a click on a different tab confirms tabs and
-panes; a click on a Space below the first confirms Space rows (the first row
+panes; clicks on Spaces below the first confirm Space rows (the first row
 sits where every config puts it). A changed config file refuses again.
 
 A confirming click must prove the replica's rectangle, not just fit it:
@@ -126,6 +126,12 @@ A confirming click must prove the replica's rectangle, not just fit it:
   the stored origin (within 0.05 cell). A click that merely overlaps it also
   fits a replica one row off, as after a `row_gap` edit that herdr has not
   loaded.
+- A Space with a branch is two rows high, and a replica one row off still
+  contains clicks in the row both draw. Space rows are confirmed only once,
+  within one config stamp, a click was contained in a Space's first row and
+  another in its last row: a replica shifted down fails the last-row click,
+  one shifted up the first-row click. For a one-row Space one click does
+  both.
 - A click on a kind whose config is unconfirmed never moves the stored
   origin, so a stale config cannot pull the calibration half a row off.
 - A relearned origin never confirms, and voids earlier confirmations for
