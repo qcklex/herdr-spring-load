@@ -7,6 +7,7 @@ from pathlib import Path
 import re
 import subprocess
 import sys
+import time
 
 SESSION_NAME = re.compile(r'^[A-Za-z0-9._-]{1,64}$')
 
@@ -136,6 +137,17 @@ def list_clients_ps():
         found.append({'pid': int(parts[0]), 'argv': argv, 'tty': None if tty in ('?', '??', '-') else '/dev/' + tty.removeprefix('/dev/'),
                       'rows': None, 'cols': None, 'xpixel': 0, 'ypixel': 0, 'foreground': None, 'env': None})
     return found
+
+def process_start(pid, platform=None):
+    """Start time of a process (epoch seconds) from ps, or None."""
+    if (platform or sys.platform) in ('win32', 'cygwin'):
+        return None
+    try:
+        out = subprocess.run(['ps', '-o', 'lstart=', '-p', str(pid)], capture_output=True, text=True, timeout=2,
+                             stdin=subprocess.DEVNULL, env={'LC_ALL': 'C', 'PATH': '/bin:/usr/bin'}).stdout
+        return time.mktime(time.strptime(' '.join(out.split()), '%a %b %d %H:%M:%S %Y'))
+    except (OSError, subprocess.SubprocessError, ValueError, OverflowError):
+        return None
 
 def attached_count(binding, everyone, fallback_env=None, platform=None):
     """Local clients that are, or may be, attached to the same session as
