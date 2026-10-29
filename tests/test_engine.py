@@ -390,7 +390,7 @@ class EngineTest(unittest.TestCase):
         self.assertEqual(engine.status['calibrated'], 1)
         self.assertIn(('tab.focus', {'tab_id': files.id}), self.server.focus_calls())
 
-    def test_config_newer_than_the_client_is_refused_until_clicks_confirm(self):
+    def test_config_newer_than_the_client_is_refused_until_clicks_confirm_tabs(self):
         # Review H3: the client may still show the config it started with. A click
         # proves only its own kind, and only once an origin was learned before it.
         self.client_started = time.time() - 3600
@@ -414,8 +414,9 @@ class EngineTest(unittest.TestCase):
         engine = self.run_engine(tab_clicks(0.1) + self.drag(3.0, [(space_point, 1.0), (tab_point, 1.0)]))
         self.assertEqual(self.server.focus_calls(), [('tab.focus', {'tab_id': files.id})],
                          'two tab clicks confirm tabs (and panes), not the Space rows')
-        self.assertIn('Space below the first', json.dumps(engine.status.get('refused')))
-        # A click on a Space below the first, agreeing with the stored origin, confirms the Space rows.
+        self.assertIn('Spaces stay off until the herdr client restarts', json.dumps(engine.status.get('refused')))
+        # Review N9c: a click on a Space below the first, even one that contains the
+        # stored origin, never confirms the Space rows.
         here, away = ws['assets']['workspace_id'], ws['project']['workspace_id']
         # Upper part of the "project" row: the calibrated origin leaves under half a row of doubt.
         project_point = (space_point[0], self.window_xy[1] + TITLEBAR + (space_rect.y - 1) * CELL_H + 4)
@@ -424,9 +425,15 @@ class EngineTest(unittest.TestCase):
         self.server.calls.clear()
         lines = []
         engine = self.run_engine(steps + self.drag(1.5, [(project_point, 1.0)]), log=lines.append)
-        self.assertEqual(self.server.focus_calls(), [('workspace.focus', {'workspace_id': away})], (lines, engine.status))
+        self.assertEqual(self.server.focus_calls(), [], (lines, engine.status))
         self.assertEqual(lines[0], f'click on space {here}: config check, confirmed',
-                         'an unconfirmed kind confirms the config without moving the origin (review N9)')
+                         'the click is contained, and it does not move the origin (review N9)')
+        self.assertTrue(all('space' not in kinds for _, kinds in engine.verified.values()), engine.verified)
+        # A client started after the config was written shows it: Spaces work.
+        self.client_started = time.time() + 60
+        self.server.calls.clear()
+        self.run_engine(self.drag(0.5, [(project_point, 1.0)]))
+        self.assertEqual(self.server.focus_calls(), [('workspace.focus', {'workspace_id': away})])
 
     def test_stale_row_gap_is_not_confirmed_by_clicks_that_only_overlap(self):
         # Review N9, the reviewer's reproduction: calibrate, then set spaces.row_gap = 1
@@ -466,8 +473,8 @@ class EngineTest(unittest.TestCase):
         # Review N9b: with a branch each Space is two rows high. Under a stale
         # spaces.row_gap = 1 the replica draws "assets" one row below herdr, so a
         # click in herdr's second "assets" row lies in the replica's first one and
-        # its whole range contains the stored origin. Space rows are confirmed only
-        # by clicks in a Space's first row and in its last row.
+        # its whole range contains the stored origin. Since N9c clicks never
+        # confirm Space rows, under a stale config or the shown one.
         repo = self.temp/'repo'
         for folder in ('.git/objects', '.git/refs/heads'):
             (repo/folder).mkdir(parents=True)
@@ -506,12 +513,12 @@ class EngineTest(unittest.TestCase):
         self.server.calls.clear()
         engine = self.run_engine(steps + self.drag(6.0, [(replica_assets, 1.0)]), log=lines.append)
         self.assertIn(f'click on space {ws["assets"]}: config check, confirmed', lines, 'the reviewer\'s case')
-        self.assertNotIn('Space rows contained so far: first, last', lines)
         self.assertEqual(engine.calibration.entry(key), before, 'the stored origin did not move')
         self.assertTrue(all('space' not in kinds for _, kinds in engine.verified.values()), engine.verified)
         self.assertEqual(self.server.focus_calls(), [])
 
-        # The same clicks under the config herdr shows: both rows, then Spaces work.
+        # The same clicks under the config herdr shows still confirm nothing (N9c):
+        # the plugin cannot tell that config from a stale one.
         (self.config/'config.toml').write_text(GOLDEN['config'] + '\n')
         self.server.user_focus('workspace.focus', workspace_id=ws['project'])
         steps = click(0.1, 'assets', row_top(4) + 10) + click(1.3, 'project', row_top(2) + 10) \
@@ -519,9 +526,68 @@ class EngineTest(unittest.TestCase):
         lines = []
         self.server.calls.clear()
         engine = self.run_engine(steps + self.drag(5.0, [((x, row_top(4) + CELL_H / 2), 1.0)]), log=lines.append)
-        self.assertEqual([l for l in lines if l.startswith('Space rows')],
-                         ['Space rows contained so far: first', 'Space rows contained so far: first, last'], lines)
+        self.assertIn(f'click on space {ws["assets"]}: config check, confirmed', lines)
+        self.assertEqual(self.server.focus_calls(), [])
+        # Restarting the client (it now starts after the config was written) turns Spaces on.
+        self.client_started = time.time() + 60
+        self.server.calls.clear()
+        self.run_engine(self.drag(0.5, [((x, row_top(4) + CELL_H / 2), 1.0)]))
         self.assertEqual(self.server.focus_calls(), [('workspace.focus', {'workspace_id': ws['assets']})])
+
+    def test_stale_config_with_a_shorter_space_is_never_confirmed(self):
+        # Review N9c: the first Space has no branch, the two below it do. The file
+        # drops the branch row, herdr still draws it: herdr has "assets" on rows
+        # 3-4 and "more" on 5-6, the replica "assets" on 3 and "more" on 4. A click
+        # on "assets"'s name row lies in the replica's first and last row alike;
+        # before the fix it confirmed the Space rows, and a hold on herdr's second
+        # "assets" row then opened "more".
+        s = self.server.snapshot
+        s['workspaces'].append({**s['workspaces'][1], 'workspace_id': 'w3', 'number': 3, 'label': 'more',
+                                'active_tab_id': 'w3:t1'})
+        s['tabs'].append({**s['tabs'][-1], 'tab_id': 'w3:t1', 'workspace_id': 'w3'})
+        s['panes'].append({**s['panes'][-1], 'pane_id': 'w3:p1', 'workspace_id': 'w3', 'tab_id': 'w3:t1',
+                           'terminal_id': 'term_more'})
+        s['layouts'].append({**copy.deepcopy(s['layouts'][-1]), 'workspace_id': 'w3', 'tab_id': 'w3:t1',
+                             'focused_pane_id': 'w3:p1'})
+        s['layouts'][-1]['panes'][0]['pane_id'] = 'w3:p1'
+        repo, home = self.temp/'repo', self.temp/'home'
+        home.mkdir()
+        for folder in ('.git/objects', '.git/refs/heads'):
+            (repo/folder).mkdir(parents=True)
+        head = repo/'.git/HEAD'
+        head.write_text('ref: refs/heads/main\n')
+        os.utime(head, (time.time() - 3600, time.time() - 3600))
+        for pane in s['panes']:
+            pane['cwd'] = pane['foreground_cwd'] = str(home if pane['workspace_id'] == 'w1' else repo)
+        stale = GOLDEN['config'] + '[ui.sidebar.spaces]\nrows = [["state_icon", "workspace"]]\n'
+        rows = lambda config: {t.id: (t.rect.y, t.rect.height) for t in render.build_model(
+            120, 40, s, render.ui_from_config(__import__('tomllib').loads(config)), render.Preferences()).targets
+            if t.kind == 'space'}
+        self.assertEqual(rows(GOLDEN['config']), {'w1': (2, 1), 'w2': (3, 2), 'w3': (5, 2)}, 'what herdr shows')
+        self.assertEqual(rows(stale), {'w1': (2, 1), 'w2': (3, 1), 'w3': (4, 1)}, 'the stale replica')
+        x = self.window_xy[0] + 5 * CELL_W
+        row_top = lambda row: self.window_xy[1] + TITLEBAR + row * CELL_H
+        def click(at, target, y):
+            return [(at, lambda: self.server.user_focus('workspace.focus', workspace_id=target)),
+                    (at + 0.05, {'type': 'click', 'x': x, 'y': y, 'window': self.window()})]
+        # Calibrate under a trusted config.
+        self.server.user_focus('workspace.focus', workspace_id='w1')
+        lines = []
+        engine = self.run_engine(click(0.1, 'w2', row_top(3) + 2) + click(1.3, 'w1', row_top(2) + 17), log=lines.append)
+        self.assertEqual([l.split('calibration ')[1] for l in lines if 'calibration ' in l][-1], 'agrees', lines)
+
+        self.client_started = time.time() - 3600
+        (self.config/'config.toml').write_text(stale)
+        self.server.user_focus('workspace.focus', workspace_id='w1')
+        lines = []
+        self.server.calls.clear()
+        engine = self.run_engine(click(0.1, 'w2', row_top(3) + 10)
+                                 + self.drag(1.5, [((x, row_top(4) + CELL_H / 2), 1.0), ((x, row_top(5) + CELL_H / 2), 1.0)]),
+                                 log=lines.append)
+        self.assertIn('click on space w2: config check, confirmed', lines, 'the click is contained')
+        self.assertTrue(all('space' not in kinds for _, kinds in engine.verified.values()), engine.verified)
+        self.assertEqual(self.server.focus_calls(), [])
+        self.assertIn('config changed after this herdr client started', engine.status['reason'])
 
     def test_relearned_geometry_voids_config_confirmations(self):
         # Review N9: 'relearned' adopts a new origin; it never confirms, and it voids
@@ -540,7 +606,7 @@ class EngineTest(unittest.TestCase):
                      (tab.kind, tab.id))
         self.assertNotIn(key, engine.verified)
 
-    def test_first_space_click_never_confirms_space_rows_and_unknown_stamp_refuses(self):
+    def test_space_clicks_never_confirm_space_rows_and_unknown_stamp_refuses(self):
         # Review H3: spaces.rows and row_gap move only the Spaces below the first.
         # Review N4: a config whose change time cannot be read is not trusted.
         engine = core.Engine(ScriptedSensor([]), self.temp/'support', env=self.env)
@@ -554,9 +620,8 @@ class EngineTest(unittest.TestCase):
         stamp, kinds = engine.verified[(4242, str(binding.config_path))]
         self.assertEqual(kinds, set())
         engine.confirm_config(click, spaces[1], model)
-        self.assertEqual(spaces[1].rect.height, 1)
-        self.assertEqual(engine.verified[(4242, str(binding.config_path))][1], {'space'},
-                         'a one-row Space: one contained click is in its first and last row (review N9b)')
+        self.assertEqual(engine.verified[(4242, str(binding.config_path))][1], set(),
+                         'no Space click confirms Space rows (review N9c)')
         engine.config_stamp = lambda path: None
         with self.assertRaises(core.Unavailable):
             engine.check_config(binding, self.client())

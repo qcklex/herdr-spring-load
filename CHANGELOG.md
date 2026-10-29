@@ -53,8 +53,8 @@ observes, and selects through herdr's own API.
   tab once, or a different Space twice. Panes work right away.
 - After a herdr config change, clicks confirm which config a running client
   shows: a click confirms only when it lands where the stored calibration
-  agrees, and it never moves that calibration. Space rows need a click in a
-  Space's top row and one in its bottom row (two rows with a git branch).
+  agrees, and it never moves that calibration. Clicks confirm tabs and
+  panes only; Spaces stay off until the client restarts.
 - Run herdr alone in its terminal window: an app with more sessions than
   visible windows (tabs, splits) is refused, because herdr in a hidden tab
   could be navigated.

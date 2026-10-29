@@ -260,11 +260,12 @@ same way. While the plugin is disabled, it pauses.
   The new-tab and other controls are never targets.
 - **Config changes.** When herdr's config changed after a client started,
   the plugin cannot tell which config that client shows, and refuses until
-  clicks confirm it: click a different tab twice for tabs and panes, and a
-  Space below the first one twice for Spaces, once on its top row and once
-  on its bottom row (a Space with a git branch is two rows high). A click
-  confirms only when it lands where every stored calibration agrees, so it
-  can take another click. Restarting the client also works.
+  clicks confirm it: click a different tab twice for tabs and panes. A
+  click confirms only when it lands where every stored calibration agrees,
+  so it can take another click. Spaces stay off until you restart the herdr
+  client: a Spaces layout edit can make a Space shorter or taller, and no
+  click can prove which layout the client shows. Restarting the client
+  turns everything back on.
 - **A click that does not fit.** If herdr focuses a tab or Space where the
   calibration says it is not drawn, spring-loading stops for that window
   until you click a different tab or Space again and that click agrees.
