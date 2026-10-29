@@ -58,6 +58,14 @@ class ContractTest(unittest.TestCase):
         self.assertIsNone(contract.parse_event(json.dumps({'type': 'drag_move', 't': 1, 'x': 1, 'y': 2,
                                                            'window': {**WINDOW, 'clients': [{**CLIENT, 'started': 'x'}]}})))
 
+    def test_optional_sessions(self):
+        # Review N10: how many terminal sessions the window's app runs.
+        move = lambda **window: json.dumps({'type': 'drag_move', 't': 1, 'x': 1, 'y': 2, 'window': {**WINDOW, **window}})
+        self.assertEqual(contract.parse_event(move(sessions=3))['window']['sessions'], 3)
+        self.assertIsNone(contract.parse_event(move())['window']['sessions'])
+        self.assertIsNone(contract.parse_event(move(sessions=-1)))
+        self.assertIsNone(contract.parse_event(move(sessions=1.5)))
+
     def test_unknown_fields_are_ignored(self):
         event = contract.parse_event('{"type":"drag_end","t":1,"x":1,"y":2,"reason":"released","extra":5}')
         self.assertNotIn('extra', event)

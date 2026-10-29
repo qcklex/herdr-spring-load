@@ -87,6 +87,7 @@ that cannot be described) or:
 | `bounds` | rect | outer frame of the window in the sensor's space, titlebar included when the OS reports it that way |
 | `scale` | number or null | backing pixels per coordinate unit for this window's display (2.0 on Retina, 1.0 on X11, null if unknown) |
 | `peers` | rect array | bounds of the owner's **other** on-screen top-level windows (same `pid`, normal layer, visible, not minimised). The core uses this for the "two same-size windows" ambiguity rule. `[]` when there are none. |
+| `sessions` | integer or null, optional | how many terminal sessions (distinct controlling ttys) the owner app runs: below `pid`, plus its session servers when clients were found through them. When it exceeds `1 + len(peers)`, the app has tabs or splits and herdr may be in a hidden one, so the core refuses and says why. The Windows sensor's one-session rule is the same idea. null or absent: not checked. |
 | `clients` | client array | herdr client processes shown in this window, from section 2.1: those that descend from `pid`; when there are none, those the sensor can tie to the window otherwise (see below) |
 
 **Clients that do not descend from the window owner.** Some terminals host

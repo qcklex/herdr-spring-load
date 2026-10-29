@@ -276,6 +276,13 @@ class Engine:
         locals_ = [c for c in listed if (clients.classify(c['argv']) or ('',))[0] == 'local' and c.get('foreground') is not False]
         if not locals_:
             raise Unavailable(None)   # not a herdr window: nothing to say
+        # A terminal app that runs more sessions than it has windows has tabs or
+        # splits: herdr in a hidden tab fits the window as well as a visible one
+        # (review N10, the Windows sensor's one-session rule).
+        sessions, windows = window.get('sessions'), 1 + len(window.get('peers', []))
+        if isinstance(sessions, int) and sessions > windows:
+            raise Unavailable(f'this terminal runs {sessions} sessions in {windows} window(s), so it has tabs or splits '
+                              'and herdr may be in a hidden one; run herdr alone in its window (no tabs, no splits)')
         fitting = [(c, g) for c in locals_ for g in [geometry.fit(bounds, c, window.get('scale'))] if g]
         if len(fitting) != 1:
             raise Unavailable('cannot tell which herdr client this window shows' if fitting else

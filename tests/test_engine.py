@@ -218,6 +218,21 @@ class EngineTest(unittest.TestCase):
         self.assertEqual(self.server.focus_calls(), [])
         self.assertIn('2 herdr clients are attached', engine.status['reason'])
 
+    def test_more_sessions_than_windows_does_nothing(self):
+        # Review N10: herdr in a hidden tab of the hovered terminal fits the window as
+        # well as a visible one. An app that runs more sessions than it shows windows
+        # (tabs, splits) is refused, as the Windows sensor does.
+        target = self.other_pane()
+        window = {**self.window(), 'sessions': 2}
+        engine = self.run_engine(self.drag(0.5, [(self.pane_point(target), 0.8)], window=window))
+        self.assertEqual(self.server.focus_calls(), [])
+        self.assertIn('run herdr alone in its window', engine.status['reason'])
+        # Two sessions in two visible windows (one per window) are fine.
+        other = {'x': 2000, 'y': 0, 'width': 500, 'height': 400}
+        window = {**self.window(peers=[other]), 'sessions': 2}
+        self.run_engine(self.drag(0.5, [(self.pane_point(target), 0.8)], window=window))
+        self.assertEqual(self.server.focus_calls(), [('pane.focus', {'pane_id': target})])
+
     def test_client_of_another_session_does_not_count(self):
         everyone = [self.client(), self.client(pid=5151, argv=('herdr', '--session', 'work')), self.client(pid=6161, argv=('herdr', '--remote', 'box'))]
         target = self.other_pane()

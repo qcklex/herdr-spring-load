@@ -256,18 +256,34 @@ let responsibleFor: ResponsibleFunction? = {
 ///     a tmux or screen server, which a window cannot be tied to that way.
 /// Anything else (screen, unknown servers) stays unlisted: the window is inert.
 func clientsFor(owner: Int32, in table: [Proc]?) -> [[String: Any]]? {
-    guard let table = table else { return nil }
-    let direct = descendants(of: owner, in: table).filter(isHerdr).compactMap(client)
-    if !direct.isEmpty { return direct }
+    lookup(owner: owner, in: table).clients
+}
+
+/// The distinct ttys among `procs`: one per terminal session (a window, tab or split).
+func sessionCount(_ procs: [Proc]) -> Int {
+    Set(procs.compactMap { $0.tdev == -1 ? nil : $0.tdev }).count
+}
+
+/// herdr clients for a window owned by `owner` (see clientsFor), and how many
+/// terminal sessions that app runs: the ttys below it, plus those of its
+/// session servers on the responsible-process path. The core compares that
+/// with the app's windows: more sessions than windows means tabs or splits,
+/// and herdr in a hidden one must not be navigated (review N10).
+func lookup(owner: Int32, in table: [Proc]?) -> (clients: [[String: Any]]?, sessions: Int?) {
+    guard let table = table else { return (nil, nil) }
+    let below = descendants(of: owner, in: table)
+    let sessions = sessionCount(below)
+    let direct = below.filter(isHerdr).compactMap(client)
+    if !direct.isEmpty { return (direct, sessions) }
     let uid = getuid()
     let herdrs = table.filter { $0.uid == uid && isHerdr($0) }
     let panes = tmuxPaneTTYs(below: owner, in: table)
     if !panes.isEmpty {
         let found = herdrs.filter { ttyPath($0).map(panes.contains) ?? false }.compactMap(client)
             .map { entry -> [String: Any] in var e = entry; e["via"] = "tmux"; return e }
-        if !found.isEmpty { return found }
+        if !found.isEmpty { return (found, sessions) }
     }
-    guard let responsible = responsibleFor, responsible(owner) == owner else { return [] }
+    guard let responsible = responsibleFor, responsible(owner) == owner else { return ([], sessions) }
     var byPid: [Int32: Proc] = [:]
     for proc in table { byPid[proc.pid] = proc }
     func underMultiplexer(_ proc: Proc) -> Bool {
@@ -280,8 +296,10 @@ func clientsFor(owner: Int32, in table: [Proc]?) -> [[String: Any]]? {
         }
         return false
     }
-    return herdrs.filter { responsible($0.pid) == owner && !underMultiplexer($0) }.compactMap(client)
+    let served = table.filter { $0.uid == uid && $0.pid != owner && responsible($0.pid) == owner && !underMultiplexer($0) }
+    let found = served.filter(isHerdr).compactMap(client)
         .map { entry -> [String: Any] in var e = entry; e["via"] = "responsible"; return e }
+    return (found, sessionCount(below + served))
 }
 
 func allClients(in table: [Proc]?) -> [[String: Any]]? {
@@ -326,15 +344,17 @@ func normalWindows() -> [WindowInfo] {
     }
 }
 
+/// Per window, refreshed every clientRefresh seconds: its herdr clients and
+/// the owner app's session count.
 final class ClientCache {
     var windowId: UInt32 = 0
     var stamp = -Double.infinity
-    var value: [[String: Any]]? = nil
+    var value: (clients: [[String: Any]]?, sessions: Int?) = (nil, nil)
 
-    func clients(for window: WindowInfo, force: Bool) -> [[String: Any]]? {
+    func entry(for window: WindowInfo, force: Bool) -> (clients: [[String: Any]]?, sessions: Int?) {
         let t = now()
         if force || window.id != windowId || t - stamp >= clientRefresh {
-            value = clientsFor(owner: window.pid, in: processTable())
+            value = lookup(owner: window.pid, in: processTable())
             windowId = window.id
             stamp = t
         }
@@ -357,12 +377,17 @@ func appName(_ pid: Int32) -> Any {
 func window(at point: CGPoint, forceClients: Bool = false) -> ([String: Any]?, UInt32?) {
     let windows = normalWindows()
     guard let hit = windows.first(where: { $0.bounds.contains(point) }) else { return (nil, nil) }
+    let found = cache.entry(for: hit, force: forceClients)
+    // peers are the owner's other visible windows: with `sessions`, the core
+    // refuses an app that runs more sessions than it shows (tabs, splits,
+    // background native tabs, windows minimised or on another Space).
     let peers = windows.filter { $0.pid == hit.pid && $0.id != hit.id }.map { rect($0.bounds) }
     let description: [String: Any] = [
         "id": String(hit.id), "pid": Int(hit.pid), "app": appName(hit.pid), "bounds": rect(hit.bounds),
         "scale": scale(at: CGPoint(x: hit.bounds.midX, y: hit.bounds.midY)).map { $0 as Any } ?? NSNull(),
         "peers": peers,
-        "clients": cache.clients(for: hit, force: forceClients).map { $0 as Any } ?? NSNull()]
+        "sessions": found.sessions.map { $0 as Any } ?? NSNull(),
+        "clients": found.clients.map { $0 as Any } ?? NSNull()]
     return (description, hit.id)
 }
 
@@ -525,8 +550,10 @@ if let i = args.firstIndex(of: "--window-at"), i + 2 < args.count, let x = Doubl
     exit(0)
 }
 if let i = args.firstIndex(of: "--clients-for"), i + 1 < args.count, let pid = Int32(args[i + 1]) {
+    let found = lookup(owner: pid, in: processTable())
     emit(["type": "status", "level": "info", "message": "clients-for",
-          "clients": clientsFor(owner: pid, in: processTable()).map { $0 as Any } ?? NSNull()])
+          "clients": found.clients.map { $0 as Any } ?? NSNull(),
+          "sessions": found.sessions.map { $0 as Any } ?? NSNull()])
     exit(0)
 }
 if args.contains("--all-clients") {

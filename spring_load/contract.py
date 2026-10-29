@@ -89,7 +89,11 @@ def validate_window(value):
     clients = value.get('clients')
     if clients is not None and not isinstance(clients, list):
         raise ContractError('window.clients must be an array or null')
-    return {'id': _string(value.get('id'), 'window.id'), 'pid': _int(value.get('pid'), 'window.pid'),
+    sessions = value.get('sessions')
+    if sessions is not None and (_int(sessions, 'window.sessions') < 0):
+        raise ContractError('window.sessions must not be negative')
+    return {'sessions': sessions,
+            'id': _string(value.get('id'), 'window.id'), 'pid': _int(value.get('pid'), 'window.pid'),
             'app': _string(value.get('app'), 'window.app', nullable=True),
             'bounds': validate_rect(value.get('bounds')), 'scale': None if scale is None else float(scale),
             'peers': [validate_rect(p, 'window.peers[]') for p in peers],
