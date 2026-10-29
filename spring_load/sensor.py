@@ -35,7 +35,17 @@ def sensor_command(support_dir, environ=None, platform=None):
         return argv
     key = platform_key(platform)
     binary = Path(support_dir)/'sensors'/(f'herdr-spring-load-sensor-{key}' + ('.exe' if key == 'windows' else ''))
-    return [str(binary)] if binary.is_file() and os.access(binary, os.X_OK) else None
+    return [str(binary)] if runnable(binary, key) else None
+
+def runnable(path, key):
+    """Whether `path` can be started as the sensor. Windows has no executable
+    bit (os.access(X_OK) is true for any file there): an .exe file is
+    runnable. Elsewhere the file needs its executable bit."""
+    if not path.is_file():
+        return False
+    if key == 'windows':
+        return path.suffix.lower() == '.exe'
+    return os.access(path, os.X_OK)
 
 class SensorProcess:
     """Starts the sensor and yields its validated events in order; the first is the hello."""

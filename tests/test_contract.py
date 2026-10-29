@@ -99,7 +99,8 @@ class SensorLoadingTest(unittest.TestCase):
     def test_platform_key(self):
         self.assertEqual([platform_key(p) for p in ('darwin', 'linux', 'win32')], ['macos', 'linux', 'windows'])
 
-    def test_discovery(self):
+    @unittest.skipIf(os.name == 'nt', 'Windows has no executable bit: os.access(X_OK) is true for any file')
+    def test_discovery_needs_the_executable_bit(self):
         with tempfile.TemporaryDirectory() as temp:
             self.assertIsNone(sensor_command(temp, environ={}, platform='linux'))
             binary = Path(temp)/'sensors/herdr-spring-load-sensor-linux'
@@ -108,6 +109,25 @@ class SensorLoadingTest(unittest.TestCase):
             self.assertIsNone(sensor_command(temp, environ={}, platform='linux'), 'not executable')
             binary.chmod(0o755)
             self.assertEqual(sensor_command(temp, environ={}, platform='linux'), [str(binary)])
+
+    def test_discovery_on_windows_needs_the_exe(self):
+        # Runs on every host: the Windows rule does not depend on mode bits.
+        with tempfile.TemporaryDirectory() as temp:
+            self.assertIsNone(sensor_command(temp, environ={}, platform='win32'))
+            sensors = Path(temp)/'sensors'
+            sensors.mkdir()
+            (sensors/'herdr-spring-load-sensor-windows').write_text('')   # no .exe: not the sensor
+            self.assertIsNone(sensor_command(temp, environ={}, platform='win32'))
+            (sensors/'herdr-spring-load-sensor-windows.exe').mkdir()     # a folder is not runnable
+            self.assertIsNone(sensor_command(temp, environ={}, platform='win32'))
+            (sensors/'herdr-spring-load-sensor-windows.exe').rmdir()
+            binary = sensors/'herdr-spring-load-sensor-windows.exe'
+            binary.write_bytes(b'MZ')
+            binary.chmod(0o644)
+            self.assertEqual(sensor_command(temp, environ={}, platform='win32'), [str(binary)])
+
+    def test_discovery_override(self):
+        with tempfile.TemporaryDirectory() as temp:
             self.assertEqual(sensor_command(temp, environ={'SPRING_LOAD_SENSOR': '["a","b"]'}), ['a', 'b'])
             with self.assertRaises(SensorError):
                 sensor_command(temp, environ={'SPRING_LOAD_SENSOR': '"a"'})
