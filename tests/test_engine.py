@@ -354,19 +354,59 @@ class EngineTest(unittest.TestCase):
         self.assertEqual(engine.status['calibrated'], 1)
         self.assertIn(('tab.focus', {'tab_id': files.id}), self.server.focus_calls())
 
-    def test_config_newer_than_the_client_is_refused_until_a_click_confirms(self):
-        # Review H3: the client may still show the config it started with.
+    def test_config_newer_than_the_client_is_refused_until_clicks_confirm(self):
+        # Review H3: the client may still show the config it started with. A click
+        # proves only its own kind, and only once an origin was learned before it.
         self.client_started = time.time() - 3600
         target = self.other_pane()
         engine = self.run_engine(self.drag(0.5, [(self.pane_point(target), 0.8)]))
         self.assertEqual(self.server.focus_calls(), [])
         self.assertIn("config changed after this herdr client started", engine.status['reason'])
         files, first, tab_point, (cx, cy) = self.tab_setup()
-        steps = [(0.15, lambda: self.server.user_focus('tab.focus', tab_id=first.id)),
-                 (0.2, {'type': 'click', 'x': cx, 'y': cy, 'window': self.window()})]
+        s = self.server.snapshot
+        ws = {w['label']: w for w in s['workspaces']}
+        model = render.build_model(120, 40, s, render.ui_from_config({'ui': {}}), render.Preferences())
+        space_rect = model.find('space', ws['assets']['workspace_id']).rect
+        space_point = (self.window_xy[0] + 5 * CELL_W, self.window_xy[1] + TITLEBAR + (space_rect.y + 0.5) * CELL_H)
+        def tab_clicks(at):
+            return [(at, lambda: self.server.user_focus('tab.focus', tab_id=first.id)),
+                    (at + 0.05, {'type': 'click', 'x': cx, 'y': cy, 'window': self.window()}),
+                    (at + 0.8, lambda: self.server.user_focus('tab.focus', tab_id=files.id)),
+                    (at + 1.5, lambda: self.server.user_focus('tab.focus', tab_id=first.id)),
+                    (at + 1.55, {'type': 'click', 'x': cx, 'y': cy - 4, 'window': self.window()})]
         self.server.calls.clear()
-        self.run_engine(steps + self.drag(1.5, [(tab_point, 1.0)]))
-        self.assertEqual(self.server.focus_calls(), [('tab.focus', {'tab_id': files.id})])
+        engine = self.run_engine(tab_clicks(0.1) + self.drag(3.0, [(space_point, 1.0), (tab_point, 1.0)]))
+        self.assertEqual(self.server.focus_calls(), [('tab.focus', {'tab_id': files.id})],
+                         'two tab clicks confirm tabs (and panes), not the Space rows')
+        self.assertIn('Space below the first', json.dumps(engine.status.get('refused')))
+        # A click on a Space below the first, agreeing with the stored origin, confirms the Space rows.
+        here, away = ws['assets']['workspace_id'], ws['project']['workspace_id']
+        # Upper part of the "project" row: the calibrated origin leaves under half a row of doubt.
+        project_point = (space_point[0], self.window_xy[1] + TITLEBAR + (space_rect.y - 1) * CELL_H + 4)
+        steps = [(0.1, lambda: self.server.user_focus('workspace.focus', workspace_id=here)),
+                 (0.15, {'type': 'click', 'x': space_point[0], 'y': space_point[1], 'window': self.window()})]
+        self.server.calls.clear()
+        lines = []
+        engine = self.run_engine(steps + self.drag(1.5, [(project_point, 1.0)]), log=lines.append)
+        self.assertEqual(self.server.focus_calls(), [('workspace.focus', {'workspace_id': away})], (lines, engine.status))
+        self.assertEqual(lines[0], f'click on space {here}: calibration agrees')
+
+    def test_first_space_click_never_confirms_space_rows_and_unknown_stamp_refuses(self):
+        # Review H3: spaces.rows and row_gap move only the Spaces below the first.
+        # Review N4: a config whose change time cannot be read is not trusted.
+        engine = core.Engine(ScriptedSensor([]), self.temp/'support', env=self.env)
+        model = render.build_model(120, 40, self.server.snapshot, render.ui_from_config({'ui': {}}), render.Preferences())
+        spaces = sorted((t for t in model.targets if t.kind == 'space'), key=lambda t: t.rect.y)
+        binding = core.clients.bind(self.client(), {})
+        click = {'binding': binding, 'client': self.client()}
+        engine.confirm_config(click, spaces[0], model)
+        stamp, kinds = engine.verified[(4242, str(binding.config_path))]
+        self.assertEqual(kinds, set())
+        engine.confirm_config(click, spaces[1], model)
+        self.assertEqual(engine.verified[(4242, str(binding.config_path))][1], {'space'})
+        engine.config_stamp = lambda path: None
+        with self.assertRaises(core.Unavailable):
+            engine.check_config(binding, self.client())
 
     def test_click_where_the_replica_draws_nothing_turns_the_window_off(self):
         # Review H3: herdr focused a tab, but the click was far below the tab bar.

@@ -31,6 +31,13 @@ AFTER_DRAG = 1.0     # clicks right after a drag may meet the plugin's own focus
 MODEL_TTL = 1.0      # re-read herdr state at least this often during a drag
 SETTLE = 5.0         # seconds herdr's git cache may lag a changed cwd or HEAD
 DISCOVER_EVERY = 10.0
+ALL_KINDS = frozenset(('space', 'tab', 'pane'))
+UNCONFIRMED = {
+    'tab': "herdr's config changed after this herdr client started, so the plugin cannot tell which config it shows. "
+           'Click a different tab twice (or restart the client) to confirm',
+    'pane': "herdr's config changed after this herdr client started; click a different tab twice to confirm the panes",
+    'space': "herdr's config changed after this herdr client started; click a Space below the first one twice "
+             'to confirm the Space rows'}
 REMOVAL_CONFIRM = 3.0
 
 @dataclass
@@ -301,8 +308,13 @@ class Engine:
         key = geometry.calibration_key(window.get('app'), bounds, client)
         if key in self.stale:
             raise Unavailable(self.stale[key])
-        self.check_config(binding, client)
+        allowed = self.check_config(binding, client)
         model, snapshot = self.read_model(binding, client)
+        if allowed != ALL_KINDS:
+            model.targets = [t for t in model.targets if t.kind in allowed]
+            for kind in ALL_KINDS - allowed:
+                model.refused.setdefault(kind, UNCONFIRMED[kind])
+            self.report(refused=dict(model.refused))
         self.context = Context(window['id'], client['pid'], binding, self.calibration.apply(key, grid), key, model, snapshot, now, bounds)
         self.ensure_subscription(binding.api_socket)
         return self.context
@@ -357,18 +369,39 @@ class Engine:
         return self.starts[pid]
 
     def check_config(self, binding, client):
-        """herdr's client reads config.toml when it starts and on a reload, and
-        no API says which. The replica's config is trusted when the file is
-        older than the client process, or when a calibration click confirmed
-        the replica for this exact file version."""
+        """Which target kinds the replica's config can be trusted for. herdr's
+        client reads config.toml when it starts and on a reload, and no API
+        says which. Everything is trusted when the file is older than the client
+        process. Otherwise a calibration click that agreed with an origin stored
+        earlier confirms only what it can prove: a tab click the tab bar and
+        the panes below it, a click on a Space below the first one the Space
+        rows (spaces.rows and row_gap move only those)."""
         stamp = self.config_stamp(binding.config_path)
+        if stamp is None:
+            raise Unavailable(f'cannot tell when {binding.config_path} last changed')
         start = self.client_start(client)
-        if stamp is not None and start is not None and stamp < start - 1:
+        if start is not None and stamp < start - 1:
+            return ALL_KINDS
+        confirmed = self.verified.get((client['pid'], str(binding.config_path)))
+        allowed = frozenset(confirmed[1]) if confirmed and confirmed[0] == stamp else frozenset()
+        if not allowed:
+            raise Unavailable(UNCONFIRMED['tab'])
+        return allowed
+
+    def confirm_config(self, click, target, model):
+        stamp = self.config_stamp(click['binding'].config_path)
+        if stamp is None:
             return
-        if stamp is not None and self.verified.get((client['pid'], str(binding.config_path))) == stamp:
-            return
-        raise Unavailable("herdr's config changed after this herdr client started, so the plugin cannot tell which "
-                          'config it shows. Click a different tab or Space once to confirm, or restart the client')
+        key = (click['client']['pid'], str(click['binding'].config_path))
+        previous = self.verified.get(key)
+        kinds = set(previous[1]) if previous and previous[0] == stamp else set()
+        if target.kind == 'tab':
+            kinds |= {'tab', 'pane'}
+        elif target.kind == 'space':
+            first = min((t.rect.y for t in model.targets if t.kind == 'space'), default=None)
+            if target.rect.y != first:
+                kinds.add('space')
+        self.verified[key] = (stamp, kinds)
 
     def branch_settled(self, api_socket, workspace_id, cwd):
         """False while herdr's asynchronous git cache may lag the disk: the
@@ -504,9 +537,10 @@ class Engine:
                                         'spring-loading is off for this window until a click agrees again')
         elif target.kind in ('space', 'tab'):
             self.stale.pop(click['key'], None)
-            stamp = self.config_stamp(click['binding'].config_path)
-            if stamp is not None:
-                self.verified[(click['client']['pid'], str(click['binding'].config_path))] = stamp
+            # A first calibration fits almost any config, so only a click that
+            # agrees with an origin learned before confirms one (review H3).
+            if outcome in ('agrees', 'relearned'):
+                self.confirm_config(click, target, model)
         self.report(calibrated=self.calibration.calibrated())
 
     # MARK: plugin registration
