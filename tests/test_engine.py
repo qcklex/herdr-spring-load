@@ -85,8 +85,12 @@ class FakeHerdr:
 
     def publish(self, event, **data):
         line = json.dumps({'event': event, 'data': {'type': event, **data}}).encode() + b'\n'
-        for conn in self.subscribers:
-            conn.sendall(line)
+        for conn in list(self.subscribers):
+            try:
+                conn.sendall(line)
+            except OSError:
+                self.subscribers.remove(conn)
+                conn.close()
 
     def focus_calls(self):
         with self.lock:
