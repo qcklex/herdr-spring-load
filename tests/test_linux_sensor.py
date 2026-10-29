@@ -1,3 +1,5 @@
+import contextlib
+import io
 import json
 import os
 from pathlib import Path
@@ -184,6 +186,53 @@ class ProcTest(unittest.TestCase):
         self.assertEqual(common.tty_path(PTS(300)), '/dev/pts/300')
         self.assertIsNone(common.tty_path(0))
 
+    def test_tab_ttys_stop_at_the_first_tty_on_each_branch(self):
+        p = self.proc
+        p.add(43, 'herdr', 41, tty_nr=0, argv=['herdr', 'server'])               # server below the client, no tty
+        p.add(44, 'sh', 43, pgrp=44, tty_nr=PTS(9), tpgid=44, argv=['sh'])        # a herdr pane: not a tab
+        p.add(80, 'helper', 30, argv=['helper'])                                  # no tty: look below it
+        p.add(81, 'bash', 80, pgrp=81, tty_nr=PTS(5), tpgid=81, argv=['bash'])
+        clients, ttys = common.terminal_processes(30, proc=self.tmp.name, size=lambda path: None)
+        self.assertEqual([c['pid'] for c in clients], [41, 42, 60])
+        self.assertEqual(ttys, {PTS(3), PTS(300), PTS(4), PTS(5)})
+
+    def hidden_tab_terminal(self, *tabs, owner=90):
+        """A single-process terminal with one tab per tty number; herdr in the first."""
+        p = self.proc
+        p.add(owner, 'kitty', 1, argv=['kitty'])
+        for n, tty in enumerate(tabs):
+            p.add(owner + 1 + 2 * n, 'sh', owner, pgrp=owner + 1 + 2 * n, tty_nr=PTS(tty), tpgid=owner + 1 + 2 * n,
+                  argv=['sh'])
+        p.add(owner + 2, 'herdr', owner + 1, pgrp=owner + 2, tty_nr=PTS(tabs[0]), tpgid=owner + 2, argv=['herdr'],
+              exe='/usr/local/bin/herdr')
+        return common.terminal_processes(owner, proc=self.tmp.name, size=lambda path: (36, 110, 990, 648))
+
+    def test_herdr_in_a_hidden_tab_is_refused(self):
+        walked = self.hidden_tab_terminal(10, 11)        # two tabs, one window: either may be visible
+        clients, refused = common.visible_clients(walked, 1)
+        self.assertEqual(refused, 'hidden_tabs')
+        self.assertEqual([(c['pid'], c['foreground']) for c in clients], [(92, False)])
+        self.assertTrue(walked[0][0]['foreground'])      # the cached walk is left as read
+        for client in clients:
+            contract.validate_client(client)
+
+    def test_one_tab_per_visible_window_is_kept(self):
+        walked = self.hidden_tab_terminal(10, 11)
+        clients, refused = common.visible_clients(walked, 2)   # two windows on screen, one tab each
+        self.assertIsNone(refused)
+        self.assertEqual([(c['pid'], c['foreground']) for c in clients], [(92, True)])
+        clients, refused = common.visible_clients(self.hidden_tab_terminal(12, owner=190), 1)
+        self.assertIsNone(refused)
+        self.assertTrue(clients[0]['foreground'])
+
+    def test_no_herdr_means_no_refusal(self):
+        self.proc.add(90, 'kitty', 1, argv=['kitty'])
+        self.proc.add(91, 'sh', 90, tty_nr=PTS(10), argv=['sh'])
+        self.proc.add(93, 'sh', 90, tty_nr=PTS(11), argv=['sh'])
+        walked = common.terminal_processes(90, proc=self.tmp.name)
+        self.assertEqual(common.visible_clients(walked, 1), ([], None))
+        self.assertEqual(common.visible_clients(None, 1), (None, None))
+
     def test_client_cache_refreshes_on_window_change_and_after_a_second(self):
         calls, clock = [], [0.0]
         cache = common.ClientCache(lookup=lambda pid: calls.append(pid) or [pid], clock=lambda: clock[0])
@@ -243,7 +292,7 @@ class HyprlandTest(unittest.TestCase):
                 hypr_client('0xe', 700, [0, 0], [100, 100], hidden=True),
             ]})
         self.backend = hyprland.Hyprland(self.fake.path)
-        self.backend.cache = common.ClientCache(lookup=lambda pid: [])
+        self.backend.cache = common.ClientCache(lookup=lambda pid: ([], set()))
 
     def tearDown(self):
         self.fake.close()
@@ -259,6 +308,25 @@ class HyprlandTest(unittest.TestCase):
         window = self.backend.describe(100, 900)
         self.assertEqual(window['id'], '0xa')
         self.assertEqual(window['peers'], [{'x': 960, 'y': 0, 'width': 960, 'height': 1080}])
+
+    def test_hidden_tab_rule_counts_the_window_and_its_peers(self):
+        herdr = {'pid': 5, 'argv': ['herdr'], 'tty': '/dev/pts/1', 'rows': 36, 'cols': 110, 'xpixel': 990,
+                 'ypixel': 648, 'foreground': True, 'started': 1.0, 'env': {}}
+        tabs = {1, 2}
+        self.backend.cache = common.ClientCache(lookup=lambda pid: ([herdr], tabs))
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out):
+            window = self.backend.describe(100, 900)                # 0xa and its peer 0xb: two windows
+            self.assertTrue(window['clients'][0]['foreground'])
+            tabs.add(3)
+            self.backend.cache.reset()
+            for _ in range(2):
+                window = self.backend.describe(100, 900)            # three tabs, two windows
+            self.assertFalse(window['clients'][0]['foreground'])
+        warnings = [json.loads(line) for line in out.getvalue().splitlines()]
+        self.assertEqual([(w['type'], w['level']) for w in warnings], [('status', 'warn')])   # once per window
+        self.assertIn('Run herdr alone in its window', warnings[0]['message'])
+        contract.validate_window(window)
 
     def test_socket_path_prefers_xdg_runtime_dir(self):
         with tempfile.TemporaryDirectory() as runtime:

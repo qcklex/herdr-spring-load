@@ -81,10 +81,13 @@ class Hyprland:
         pid = top.get('pid')
         if not isinstance(pid, int) or pid <= 0:
             return None
+        peers = [rect(c) for c in candidates if c is not top and c.get('pid') == pid]
+        clients, refused = common.visible_clients(self.cache.get(top.get('address'), pid), 1 + len(peers))
+        if refused:
+            common.warn_once((top.get('address'), refused), common.HIDDEN_TABS)
         return {'id': top.get('address', ''), 'pid': pid, 'app': top.get('class') or None,
                 'bounds': rect(top), 'scale': scale_of.get(top['workspace']['id']),
-                'peers': [rect(c) for c in candidates if c is not top and c.get('pid') == pid],
-                'clients': self.cache.get(top.get('address'), pid)}
+                'peers': peers, 'clients': clients}
 
 
 def contains(client, x, y):

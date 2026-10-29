@@ -18,7 +18,7 @@ This sensor implements the sensor contract in `docs/SENSOR.md`. It is Python 3 s
 | drag kind | `files` or `other` from the source's `XdndTypeList`, when the source publishes one; otherwise `unknown`. GTK publishes it only with more than three types. No drag data is ever read. |
 | window | The topmost mapped, non-override-redirect child of the root at the pointer, so drag icons, menus and tooltips are skipped. Then the `WM_STATE` client window inside it, its `_NET_WM_PID`, `WM_CLASS` and root-relative geometry. |
 | peers | `_NET_CLIENT_LIST`, keeping only windows with the same `_NET_WM_PID` that are viewable, not hidden and on the current desktop |
-| clients | `/proc/*/stat` below the window's pid. Every `herdr` with a controlling tty, with `TIOCGWINSZ` read through a read-only open of its `/dev/pts/N`, and `foreground` from `pgrp == tpgid` |
+| clients | `/proc/*/stat` below the window's pid. Every `herdr` with a controlling tty, with `TIOCGWINSZ` read through a read-only open of its `/dev/pts/N`, and `foreground` from `pgrp == tpgid`. Hidden-tab rule: when the window's process hosts more tabs (the first controlling tty on each branch below it) than it has visible windows (this one plus `peers`), every client gets `foreground: false` and the sensor sends one `warn` status, because a hidden tab keeps the window's size and fitting cannot tell it from the visible one. This covers single-process terminals with tabs or splits (gnome-terminal, konsole, xfce4-terminal, kitty, wezterm, foot --server) |
 
 `bounds` is the client window, without the window manager's decorations. The decorated frame is the extra field `frame`.
 

@@ -345,9 +345,12 @@ class X11:
         if not pid or not rect:
             return None
         frame_rect = self.bounds(frame)[0] if frame and frame != window else rect
+        peers = self.peers(window, pid)
+        clients, refused = common.visible_clients(self.cache.get(window, pid), 1 + len(peers))
+        if refused:
+            common.warn_once((str(window), refused), common.HIDDEN_TABS)
         described = {'id': str(window), 'pid': pid, 'app': self.app(window), 'bounds': rect, 'scale': 1.0,
-                     'peers': self.peers(window, pid), 'clients': self.cache.get(window, pid),
-                     'frame': frame_rect}
+                     'peers': peers, 'clients': clients, 'frame': frame_rect}
         self.described = (window, at, described)
         return described
 

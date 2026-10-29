@@ -74,6 +74,16 @@ def status(level, message):
     emit({'type': 'status', 'level': level, 'message': message})
 
 
+_warned = set()
+
+
+def warn_once(key, message):
+    """A warn status the first time key is seen, so a hover does not repeat it on every move."""
+    if key not in _warned:
+        _warned.add(key)
+        status('warn', message)
+
+
 def wait_for_stdin_eof():
     try:
         while sys.stdin.buffer.read(4096):
@@ -248,26 +258,58 @@ def client_record(pid, stat, proc='/proc', size=winsize):
             'env': read_env(pid, proc)}
 
 
-def herdr_clients(owner_pid, proc='/proc', size=winsize):
-    """Every herdr process with a controlling tty below owner_pid (docs/SENSOR.md, section 2.1).
+def terminal_processes(owner_pid, proc='/proc', size=winsize):
+    """(herdr clients, tab ttys) below the terminal process owner_pid, or None when
+    the process tree cannot be read at all.
 
-    Returns None when the process tree cannot be read at all."""
+    Clients are every herdr process with a controlling tty below owner_pid
+    (docs/SENSOR.md, section 2.1). Tab ttys are the controlling ttys of the
+    first process with one on each branch below the terminal: one per tab or
+    split it hosts. Deeper ttys (herdr's own panes, a nested pty) are not tabs."""
     tree = children_map(proc)
     if tree is None:
         return None
-    found, stack, seen = [], [owner_pid], set()
+    found, ttys, stack, seen = [], set(), [(owner_pid, False)], set()
     while stack:
-        parent = stack.pop()
+        parent, below_tty = stack.pop()
         for pid, stat in tree.get(parent, []):
             if pid in seen:
                 continue
             seen.add(pid)
-            stack.append(pid)
+            tty_nr = stat[3]
+            if tty_nr and not below_tty:
+                ttys.add(tty_nr)
+            stack.append((pid, below_tty or bool(tty_nr)))
             record = client_record(pid, stat, proc, size)
             if record:
                 found.append(record)
     found.sort(key=lambda client: client['pid'])
-    return found
+    return found, ttys
+
+
+def herdr_clients(owner_pid, proc='/proc', size=winsize):
+    """Every herdr process with a controlling tty below owner_pid, or None when the process tree cannot be read."""
+    walked = terminal_processes(owner_pid, proc, size)
+    return None if walked is None else walked[0]
+
+
+HIDDEN_TABS = ('this terminal hosts more tabs or splits than it shows windows, and the sensor cannot tell which one '
+               'is visible; spring-loading is off here. Run herdr alone in its window (one tab, no splits).')
+
+
+def visible_clients(walked, windows):
+    """The window's client list under the hidden-tab rule, and 'hidden_tabs' when it refuses.
+
+    A terminal process that hosts more tabs (ttys) than it has visible windows
+    may show any of them; a hidden tab keeps the window's size, so fitting
+    proves nothing. Then every client is reported with foreground false and
+    the core binds none. This is the Windows sensor's multi-tab rule."""
+    if walked is None:
+        return None, None
+    found, ttys = walked
+    if found and len(ttys) > windows:
+        return [dict(client, foreground=False) for client in found], 'hidden_tabs'
+    return found, None
 
 
 def all_herdr_clients(proc='/proc', size=winsize, uid=None):
@@ -293,7 +335,7 @@ def all_herdr_clients(proc='/proc', size=winsize, uid=None):
 class ClientCache:
     """Client lookup on drag start, on a window change, and at most once a second otherwise."""
 
-    def __init__(self, lookup=herdr_clients, clock=time.monotonic):
+    def __init__(self, lookup=terminal_processes, clock=time.monotonic):
         self.lookup, self.clock = lookup, clock
         self.key = None
         self.value = None
