@@ -36,11 +36,14 @@ def all_dlls(**overrides):
         dlls[dll] = FakeDLL(**functions)
     return dlls
 
+POINTER_SIZED_FIELDS = {'th32DefaultHeapID', 'PebBaseAddress', 'AffinityMask', 'UniqueProcessId',
+                        'InheritedFromUniqueProcessId'}
+
 class StructLayoutTest(unittest.TestCase):
     def test_sizes_match_64_bit_windows(self):
         expected = {structs.POINT: 8, structs.RECT: 16, structs.CURSORINFO: 24, structs.GUITHREADINFO: 72,
                     structs.PROCESSENTRY32W: 568, structs.CONSOLE_SCREEN_BUFFER_INFO: 22, structs.FILETIME: 8,
-                    structs.UNICODE_STRING: 16}
+                    structs.UNICODE_STRING: 16, structs.PROCESS_BASIC_INFORMATION: 48}
         for struct, size in expected.items():
             self.assertEqual(ctypes.sizeof(struct), size, struct.__name__)
 
@@ -50,15 +53,19 @@ class StructLayoutTest(unittest.TestCase):
         self.assertEqual(structs.GUITHREADINFO.hwndCapture.offset, 24)
         self.assertEqual(structs.CURSORINFO.hCursor.offset, 8)
         self.assertEqual(structs.CONSOLE_SCREEN_BUFFER_INFO.srWindow.offset, 10)
+        self.assertEqual(structs.PROCESS_BASIC_INFORMATION.PebBaseAddress.offset, 8)
+        self.assertEqual(structs.PROCESS_BASIC_INFORMATION.UniqueProcessId.offset, 32)
 
     def test_no_platform_dependent_field_types(self):
         for struct in (structs.POINT, structs.RECT, structs.CURSORINFO, structs.GUITHREADINFO,
-                       structs.PROCESSENTRY32W, structs.CONSOLE_SCREEN_BUFFER_INFO):
+                       structs.PROCESSENTRY32W, structs.CONSOLE_SCREEN_BUFFER_INFO, structs.PROCESS_BASIC_INFORMATION):
             for name, kind in struct._fields_:
                 self.assertIsNot(kind, ctypes.c_wchar, name)
                 if kind in (ctypes.c_long, ctypes.c_ulong):
-                    # Only ULONG_PTR (c_size_t, an alias of c_ulong on LP64) may be one.
-                    self.assertEqual((name, ctypes.sizeof(kind)), ('th32DefaultHeapID', ctypes.sizeof(ctypes.c_void_p)))
+                    # Only pointer-sized fields may be one: ULONG_PTR (c_size_t) and the
+                    # c_uint64 pointers, both aliases of c_ulong on LP64.
+                    self.assertIn(name, POINTER_SIZED_FIELDS)
+                    self.assertEqual(ctypes.sizeof(kind), 8, name)
 
     def test_wide_text(self):
         entry = structs.PROCESSENTRY32W()
@@ -251,6 +258,99 @@ class RealWin32Test(unittest.TestCase):
         kernel32.AttachConsole = lambda pid: 0 # no console: the herdr server
         self.assertIsNone(win32.probe_console(951, kernel32))
 
+class FakeMemory:
+    """Another process's address space: {base address: bytes}."""
+    def __init__(self, regions):
+        self.regions = regions
+        self.reads = []
+
+    def read(self, handle, address, buffer, size, done):
+        self.reads.append((address, size))
+        for base, data in self.regions.items():
+            if base <= address and address + size <= base + len(data):
+                chunk = data[address - base:address - base + size]
+                ctypes.memmove(buffer, chunk, len(chunk))
+                obj(done).value = len(chunk)
+                return 1
+        return 0
+
+PEB, PARAMS, BLOCK = 0x7FF0_0000_1000, 0x0000_0200_0000, 0x0000_0300_0000
+
+def env_process(block_text, size=None, wow64=0, basic_status=0):
+    """Fake kernel32 and ntdll for one process whose environment block is `block_text`."""
+    data = block_text.encode('utf-16-le')
+    params = bytearray(0x400)
+    params[0x80:0x88] = BLOCK.to_bytes(8, 'little')
+    params[0x3F0:0x3F8] = (len(data) if size is None else size).to_bytes(8, 'little')
+    memory = FakeMemory({PEB: bytes(0x20) + PARAMS.to_bytes(8, 'little'), PARAMS: bytes(params), BLOCK: data})
+    opened, closed = [], []
+    def query(handle, kind, buffer, size, needed):
+        if kind == win32.PROCESS_WOW64_INFORMATION:
+            obj(buffer).value = wow64
+            return 0
+        if kind == win32.PROCESS_BASIC_INFORMATION_CLASS:
+            if basic_status:
+                return basic_status
+            obj(buffer).PebBaseAddress = PEB
+            return 0
+        return -1
+    dlls = all_dlls(kernel32={'OpenProcess': lambda access, inherit, pid: opened.append(access) or 0x77,
+                              'ReadProcessMemory': lambda *a: memory.read(*a), 'CloseHandle': lambda h: closed.append(h) or 1},
+                    ntdll={'NtQueryInformationProcess': query})
+    return win32.RealWin32(dlls), memory, opened, closed
+
+BLOCK_TEXT = ('=C:=C:\\Users\\a\0ALLUSERSPROFILE=C:\\ProgramData\0AppData=C:\\Users\\a\\AppData\\Roaming\0'
+              'herdr_session=work\0PATH=C:\\Windows\0USERPROFILE=C:\\Users\\a\0\0')
+
+class EnvironmentReadTest(unittest.TestCase):
+    def test_reads_only_the_contract_keys_from_the_peb(self):
+        w, memory, opened, closed = env_process(BLOCK_TEXT)
+        self.assertEqual(w.environment(950), {'APPDATA': 'C:\\Users\\a\\AppData\\Roaming', 'HERDR_SESSION': 'work',
+                                              'USERPROFILE': 'C:\\Users\\a'})
+        self.assertEqual(opened, [win32.PROCESS_QUERY_INFORMATION | win32.PROCESS_VM_READ])
+        self.assertEqual(closed, [0x77])
+        self.assertEqual(memory.reads[:3], [(PEB + 0x20, 8), (PARAMS + 0x80, 8), (PARAMS + 0x3F0, 8)])
+
+    def test_unopenable_process_is_unknown(self):
+        w = win32.RealWin32(all_dlls(kernel32={'OpenProcess': lambda *a: 0}))
+        self.assertIsNone(w.environment(950)) # elevated, another user, or gone
+
+    def test_32_bit_target_is_unknown(self):
+        w, memory, _, closed = env_process(BLOCK_TEXT, wow64=0x7EFDE000)
+        self.assertIsNone(w.environment(950))
+        self.assertEqual((memory.reads, closed), ([], [0x77]))
+
+    def test_query_failure_is_unknown(self):
+        w, _, _, _ = env_process(BLOCK_TEXT, basic_status=-1073741790) # STATUS_ACCESS_DENIED
+        self.assertIsNone(w.environment(950))
+
+    def test_oversized_odd_or_short_block_is_unknown(self):
+        for size in (win32.MAX_ENVIRONMENT + 2, 7, 0, len(BLOCK_TEXT.encode('utf-16-le')) + 64):
+            w, _, _, _ = env_process(BLOCK_TEXT, size=size)
+            self.assertIsNone(w.environment(950), size)
+
+    def test_torn_block_without_terminator_is_unknown(self):
+        w, _, _, _ = env_process('APPDATA=C:\\x\0HERDR_SESSION=wo')
+        self.assertIsNone(w.environment(950))
+
+    def test_start_time_and_sessions(self):
+        def times(h, created, *rest):
+            value = structs.UNIX_EPOCH_FILETIME + 17_000_000_005_000_000 # 1_700_000_000.5 s after the epoch
+            obj(created).dwHighDateTime, obj(created).dwLowDateTime = value >> 32, value & 0xFFFFFFFF
+            return 1
+        def session(pid, out):
+            if pid == 99:
+                return 0
+            obj(out).value = 2 if pid in (950, 4) else 3
+            return 1
+        w = win32.RealWin32(all_dlls(kernel32={'OpenProcess': lambda *a: 0x44, 'GetProcessTimes': times,
+                                               'CloseHandle': lambda h: 1, 'ProcessIdToSessionId': session,
+                                               'GetCurrentProcessId': lambda: 4}))
+        self.assertEqual(w.started(950), 1_700_000_000.5)
+        self.assertEqual((w.session_of(950), w.session_of(951), w.session_of(99), w.own_session()), (2, 3, None, 2))
+        self.assertIsNone(structs.filetime_epoch(0))
+        self.assertIsNone(structs.filetime_epoch(None))
+
 class CommandLineTest(unittest.TestCase):
     def test_windows_rules(self):
         cases = {
@@ -305,13 +405,15 @@ class FindClientsTest(unittest.TestCase):
     owner = Process(900, 1, 'WindowsTerminal.exe')
 
     def find(self, procs, console, owner=None, cls='CASCADIA_HOSTING_WINDOW_CLASS', created=TIMES):
-        return logic.find_clients(owner or self.owner, cls, procs, created, lambda pid: ['herdr'], sizes(console))
+        return logic.find_clients(owner or self.owner, cls, procs, created, lambda pid: ['herdr'], sizes(console),
+                                  lambda pid: {'APPDATA': 'C:\\Users\\a\\AppData\\Roaming'}, lambda pid: 1.7e9 + pid)
 
     def test_windows_terminal_one_tab(self):
         clients, reason = self.find(wt(1, herdr=[(950, 920)]), {950: (239, 68)})
         self.assertIsNone(reason)
         self.assertEqual(clients, [{'pid': 950, 'argv': ['herdr'], 'tty': None, 'rows': 68, 'cols': 239,
-                                    'xpixel': 0, 'ypixel': 0, 'foreground': True}])
+                                    'xpixel': 0, 'ypixel': 0, 'foreground': True, 'started': 1.7e9 + 950,
+                                    'env': {'APPDATA': 'C:\\Users\\a\\AppData\\Roaming'}}])
 
     def test_windows_terminal_second_tab_is_ambiguous(self):
         # herdr in one tab, a plain shell in another: the visible tab is unknown.
@@ -369,8 +471,55 @@ class FindClientsTest(unittest.TestCase):
 
     def test_unreadable_argv_is_an_empty_list(self):
         clients, _ = logic.find_clients(self.owner, 'X', wt(1, herdr=[(950, 920)]), TIMES, lambda pid: None,
-                                        sizes({950: (1, 1)}))
+                                        sizes({950: (1, 1)}), lambda pid: {'HOME': 'x'})
         self.assertEqual(clients[0]['argv'], [])
+        self.assertIsNone(clients[0]['env']) # no argv, no session: never bound
+
+    def test_unreadable_environment_is_null(self):
+        clients, _ = logic.find_clients(self.owner, 'X', wt(1, herdr=[(950, 920)]), TIMES, lambda pid: ['herdr'],
+                                        sizes({950: (1, 1)}))
+        self.assertEqual((clients[0]['env'], clients[0]['started']), (None, None))
+
+class EnvironmentParseTest(unittest.TestCase):
+    def test_keys_match_the_contract(self):
+        self.assertEqual(set(logic.ENV_KEYS), contract.CLIENT_ENV)
+
+    def test_case_insensitive_names_first_one_wins(self):
+        self.assertEqual(logic.parse_environment('Home=a\0HOME=b\0xdg_config_home=c\0=D:=D:\\\0\0'),
+                         {'HOME': 'a', 'XDG_CONFIG_HOME': 'c'})
+
+    def test_values_keep_equals_signs_and_empty_block(self):
+        self.assertEqual(logic.parse_environment('HERDR_CONFIG_PATH=C:\\a=b.toml\0\0'),
+                         {'HERDR_CONFIG_PATH': 'C:\\a=b.toml'})
+        self.assertEqual(logic.parse_environment('\0\0'), {})
+        self.assertIsNone(logic.parse_environment('HOME=a\0'))
+
+class AllClientsTest(unittest.TestCase):
+    def collect(self, procs, sessions=None, own=1, argvs=None, envs=None):
+        sessions, argvs, envs = sessions or {}, argvs or {}, envs or {}
+        return logic.all_clients(procs, lambda pid: sessions.get(pid, 1), own,
+                                 lambda pid: argvs.get(pid, ['herdr']), lambda pid: envs.get(pid, {'HOME': 'h'}),
+                                 lambda pid: 1.7e9 + pid)
+
+    def test_every_herdr_of_this_logon_session(self):
+        procs = wt(2, herdr=[(950, 920), (951, 921)]) + [Process(960, 1, 'herdr.exe'), Process(970, 1, 'HERDR.EXE')]
+        found = self.collect(procs, sessions={970: 2}, argvs={960: ['herdr', 'server']})
+        self.assertEqual([c['pid'] for c in found], [950, 951, 960]) # 970 is another user's logon session
+        self.assertEqual(found[2]['argv'], ['herdr', 'server']) # the core ignores the server by its argv
+        self.assertEqual(found[0], {'pid': 950, 'argv': ['herdr'], 'tty': None, 'rows': None, 'cols': None,
+                                    'xpixel': 0, 'ypixel': 0, 'foreground': None, 'started': 1.7e9 + 950,
+                                    'env': {'HOME': 'h'}})
+
+    def test_unknown_session_or_argv_is_kept_as_unknown(self):
+        procs = [Process(950, 1, 'herdr.exe'), Process(951, 1, 'herdr.exe')]
+        found = self.collect(procs, sessions={950: None}, argvs={951: None})
+        self.assertEqual([c['pid'] for c in found], [950, 951])
+        self.assertEqual((found[1]['argv'], found[1]['env']), (['herdr.exe'], None))
+        self.assertEqual([c['pid'] for c in self.collect(procs, sessions={950: 5, 951: 6}, own=None)], [950, 951])
+
+    def test_unreadable_environment_stays_null(self):
+        found = self.collect([Process(950, 1, 'herdr.exe')], envs={950: None})
+        self.assertIsNone(found[0]['env'])
 
 def ticks(detector, *steps):
     out = []
@@ -452,6 +601,7 @@ class FakeWin32:
         self.capture = None
         self.cursor = True
         self.lookups = 0
+        self.argvs, self.envs, self.sessions = {}, {}, {}
 
     def set_dpi_awareness(self): return self.dpi
     def virtual_screen(self): return Rect(-1920, 0, 3840, 1080)
@@ -465,7 +615,11 @@ class FakeWin32:
     def top_windows(self): return list(self.windows)
     def scale(self, hwnd): return 1.5
     def created(self, pid): return pid
-    def argv(self, pid): return ['herdr']
+    def started(self, pid): return 1.7e9 + pid
+    def argv(self, pid): return self.argvs.get(pid, ['herdr'])
+    def environment(self, pid): return self.envs.get(pid, {'APPDATA': 'C:\\Users\\a\\AppData\\Roaming'})
+    def session_of(self, pid): return self.sessions.get(pid, 1)
+    def own_session(self): return 1
     def console_size(self, pid): return self.consoles.get(pid)
 
     def root_at(self, x, y):
@@ -532,9 +686,46 @@ class SensorLoopTest(unittest.TestCase):
         gaps = [b['t'] - a['t'] for a, b in zip(moves, moves[1:])]
         self.assertGreaterEqual(min(gaps), 0.03 - 1e-9)
         self.assertLessEqual(max(gaps), 0.25 + 0.016)
-        # Process lookups: one at drag start, one when the window changed.
-        self.assertEqual(win.lookups, 2)
+        # Process lookups: two at drag start (window, all_clients), one when the window changed.
+        self.assertEqual(win.lookups, 3)
         self.assertNotIn('status', types)
+
+    def test_drag_start_lists_all_clients_for_the_gate(self):
+        from spring_load import clients as core_clients
+        events, _ = self.drag(wt(1, herdr=[(950, 920)]) + [Process(960, 1, 'herdr.exe')], {950: (239, 68)})
+        start = contract.validate_event(events[1])
+        everyone = start['all_clients']
+        self.assertEqual([c['pid'] for c in everyone], [950, 960])
+        self.assertEqual(everyone[0]['env'], {'APPDATA': 'C:\\Users\\a\\AppData\\Roaming'})
+        self.assertEqual(everyone[0]['started'], 1.7e9 + 950)
+        over = next(e for e in events if e['type'] == 'drag_move' and e['window'] and e['window']['id'] == str(0x600))
+        client = contract.validate_event(over)['window']['clients'][0]
+        binding = core_clients.bind(client, platform='win32')
+        self.assertTrue(str(binding.api_socket).endswith('herdr.sock'))
+        # 960 has argv ['herdr'] too (a second client of the same session): the gate refuses.
+        self.assertEqual(core_clients.attached_count(binding, everyone, platform='win32'), 2)
+
+    def test_one_client_passes_the_gate_and_unknown_env_fails_safe(self):
+        from spring_load import clients as core_clients
+        procs = wt(1, herdr=[(950, 920)]) + [Process(960, 1, 'herdr.exe'), Process(970, 1, 'herdr.exe')]
+        win = FakeWin32([EXPLORER, TERMINAL], procs + [Process(700, 1, 'explorer.exe')], {950: (239, 68)})
+        win.argvs = {960: ['herdr', 'server']}
+        win.sessions = {970: 2}
+        events, _ = run_script(win, [(0.05, {'x': -1000, 'y': 500, 'held': True}),
+                                     (0.05, {'x': -980, 'capture': True, 'cursor': False}),
+                                     (0.30, {'x': 800, 'y': 400}), (0.05, {'held': False, 'capture': False})])
+        everyone = contract.validate_event(events[1])['all_clients']
+        over = next(e for e in events if e['type'] == 'drag_move' and e['window'] and e['window']['id'] == str(0x600))
+        client = contract.validate_event(over)['window']['clients'][0]
+        binding = core_clients.bind(client, platform='win32')
+        self.assertEqual(core_clients.attached_count(binding, everyone, platform='win32'), 1)
+        # The same client with an unreadable environment is never bound.
+        with self.assertRaises(core_clients.Unbound):
+            core_clients.bind(dict(client, env=None), platform='win32')
+        everyone[0]['env'] = None
+        self.assertEqual(core_clients.attached_count(binding, everyone, platform='win32'), 1)
+        everyone.append(dict(everyone[0], pid=980))
+        self.assertEqual(core_clients.attached_count(binding, everyone, platform='win32'), 2)
 
     def test_windows_terminal_with_two_tabs_is_refused(self):
         events, _ = self.drag(wt(2, herdr=[(950, 920)]), {950: (239, 68)})

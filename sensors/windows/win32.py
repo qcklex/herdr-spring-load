@@ -8,8 +8,10 @@ import json
 import subprocess
 
 from .structs import (CONSOLE_SCREEN_BUFFER_INFO, CURSORINFO, DWORD, FILETIME, GUITHREADINFO, HANDLE, LONG,
-                     POINT, PROCESSENTRY32W, RECT, UNICODE_STRING, filetime_value, wide_text)
-from .logic import Process, Rect, TopWindow
+                     PARAMS_ENVIRONMENT, PARAMS_ENVIRONMENT_SIZE, PEB_PROCESS_PARAMETERS, POINT,
+                     PROCESS_BASIC_INFORMATION, PROCESSENTRY32W, RECT, UNICODE_STRING, filetime_epoch,
+                     filetime_value, wide_text)
+from .logic import Process, Rect, TopWindow, parse_environment
 
 BOOL = ctypes.c_int32
 BYTE = ctypes.c_uint8
@@ -31,7 +33,10 @@ DWMWA_CLOAKED, DWMWA_EXTENDED_FRAME_BOUNDS = 14, 9
 TH32CS_SNAPPROCESS = 0x2
 INVALID_HANDLE = ctypes.c_void_p(-1).value
 PROCESS_QUERY_LIMITED_INFORMATION = 0x1000
+PROCESS_QUERY_INFORMATION, PROCESS_VM_READ = 0x0400, 0x0010
+PROCESS_BASIC_INFORMATION_CLASS, PROCESS_WOW64_INFORMATION = 0, 26
 PROCESS_COMMAND_LINE_INFORMATION = 60
+MAX_ENVIRONMENT = 1 << 20 # bytes; a larger block is not trusted
 DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2 = -4
 GENERIC_READ, GENERIC_WRITE = 0x80000000, 0x40000000
 FILE_SHARE_READ, FILE_SHARE_WRITE, OPEN_EXISTING = 1, 2, 3
@@ -75,6 +80,9 @@ SIGNATURES = {
         'AttachConsole': (BOOL, [DWORD]),
         'CreateFileW': (HANDLE, [ctypes.c_wchar_p, DWORD, DWORD, ctypes.c_void_p, DWORD, DWORD, HANDLE]),
         'GetConsoleScreenBufferInfo': (BOOL, [HANDLE, P(CONSOLE_SCREEN_BUFFER_INFO)]),
+        'ReadProcessMemory': (BOOL, [HANDLE, ctypes.c_void_p, ctypes.c_void_p, ctypes.c_size_t, P(ctypes.c_size_t)]),
+        'ProcessIdToSessionId': (BOOL, [DWORD, P(DWORD)]),
+        'GetCurrentProcessId': (DWORD, []),
     },
     'ntdll': {
         'NtQueryInformationProcess': (LONG, [HANDLE, UINT, ctypes.c_void_p, UINT, P(UINT)]),
@@ -274,6 +282,72 @@ class RealWin32:
             if not self.fn['GetProcessTimes'](handle, *(ctypes.byref(t) for t in times)):
                 return None
             return filetime_value(times[0])
+        finally:
+            self.fn['CloseHandle'](handle)
+
+    def started(self, pid):
+        """Process start in seconds since the Unix epoch, or None."""
+        return filetime_epoch(self.created(pid))
+
+    def session_of(self, pid):
+        """The logon (Terminal Services) session of a process, or None."""
+        session = DWORD()
+        return session.value if self.fn['ProcessIdToSessionId'](pid, ctypes.byref(session)) else None
+
+    def own_session(self):
+        return self.session_of(self.fn['GetCurrentProcessId']())
+
+    def _read(self, handle, address, size):
+        """Exactly `size` bytes of another process at `address`, or None."""
+        if not address or size <= 0:
+            return None
+        buffer = ctypes.create_string_buffer(size)
+        done = ctypes.c_size_t()
+        if not self.fn['ReadProcessMemory'](handle, address, buffer, size, ctypes.byref(done)) or done.value != size:
+            return None
+        return buffer.raw
+
+    def _read_u64(self, handle, address):
+        data = self._read(handle, address, 8)
+        return None if data is None else int.from_bytes(data, 'little')
+
+    def environment(self, pid):
+        """The contract's environment keys of process `pid`, read from its PEB:
+        ProcessBasicInformation gives the PEB, whose ProcessParameters hold
+        the environment block and its size. Same-user, non-elevated processes
+        only; anything unexpected (a 32-bit sensor or target, an access error,
+        a torn or oversized block) gives None, which the core treats as
+        unknown and fails safe on."""
+        if ctypes.sizeof(ctypes.c_void_p) != 8:
+            return None
+        handle = self.fn['OpenProcess'](PROCESS_QUERY_INFORMATION | PROCESS_VM_READ, 0, pid)
+        if not handle:
+            return None
+        try:
+            query = self.fn['NtQueryInformationProcess']
+            wow64 = ctypes.c_uint64()
+            if query(handle, PROCESS_WOW64_INFORMATION, ctypes.byref(wow64), 8, None) != 0 or wow64.value:
+                return None
+            basic = PROCESS_BASIC_INFORMATION()
+            if query(handle, PROCESS_BASIC_INFORMATION_CLASS, ctypes.byref(basic), ctypes.sizeof(basic), None) != 0:
+                return None
+            if not basic.PebBaseAddress:
+                return None
+            params = self._read_u64(handle, basic.PebBaseAddress + PEB_PROCESS_PARAMETERS)
+            if not params:
+                return None
+            block = self._read_u64(handle, params + PARAMS_ENVIRONMENT)
+            size = self._read_u64(handle, params + PARAMS_ENVIRONMENT_SIZE)
+            if not block or not size or size > MAX_ENVIRONMENT or size % 2:
+                return None
+            data = self._read(handle, block, size)
+            if data is None:
+                return None
+            try:
+                text = data.decode('utf-16-le')
+            except UnicodeDecodeError:
+                return None
+            return parse_environment(text)
         finally:
             self.fn['CloseHandle'](handle)
 

@@ -4,7 +4,10 @@
   and cursor state (the heuristic is documented in README.md).
 - pick_window: the topmost normal top-level window under the pointer.
 - find_clients: herdr client processes below a window owner, with the
-  fail-safe rule for terminals that host several sessions in one process."""
+  fail-safe rule for terminals that host several sessions in one process.
+- all_clients: every herdr process of this logon session, for the core's
+  exactly-one-client gate.
+- parse_environment: the contract's environment keys from an environment block."""
 from dataclasses import dataclass
 
 CLICK_DISTANCE = 8
@@ -21,6 +24,29 @@ SKIP_CLASSES = {'Progman', 'WorkerW', 'Shell_TrayWnd', 'Shell_SecondaryTrayWnd',
 CONSOLE_CLASS = 'ConsoleWindowClass'
 CONSOLE_HOSTS = {'openconsole.exe', 'conhost.exe'}
 HERDR_NAMES = {'herdr', 'herdr.exe'}
+# The client environment keys docs/SENSOR.md allows; never send any other.
+ENV_KEYS = ('HERDR_SESSION', 'HERDR_SOCKET_PATH', 'HERDR_CLIENT_SOCKET_PATH', 'HERDR_CONFIG_PATH',
+            'XDG_CONFIG_HOME', 'XDG_STATE_HOME', 'HOME', 'APPDATA', 'LOCALAPPDATA', 'USERPROFILE')
+_ENV_KEYS_UPPER = {k.upper(): k for k in ENV_KEYS}
+
+def parse_environment(block):
+    """The allowed keys from a Windows environment block ("K=V\\0...\\0\\0", already
+    decoded). Windows variable names are case-insensitive, as herdr's lookups
+    are, so keys are matched without case and reported in the contract's
+    spelling. Entries starting with '=' (per-drive current directories) are
+    skipped. Returns None for a block without its terminating empty entry."""
+    end = block.find('\0\0')
+    if end < 0:
+        return None
+    env = {}
+    for entry in block[:end].split('\0'):
+        name, eq, value = entry.partition('=')
+        if not eq or not name:
+            continue
+        key = _ENV_KEYS_UPPER.get(name.upper())
+        if key is not None and key not in env:
+            env[key] = value
+    return env
 
 @dataclass
 class Rect:
@@ -104,7 +130,15 @@ def session_count(owner, owner_cls, processes):
     hosts = [p for p in processes if p.ppid == owner.pid and p.exe.lower() in CONSOLE_HOSTS]
     return len(hosts) or None
 
-def find_clients(owner, owner_cls, processes, created, argv_of, console_size):
+def client_entry(pid, argv, env, started, rows=None, cols=None, foreground=None):
+    """A contract client object. Without argv the session cannot be worked out,
+    so env is dropped too: the core then never binds the client and counts it
+    as attached to every session."""
+    return {'pid': pid, 'argv': argv or [], 'tty': None, 'rows': rows, 'cols': cols, 'xpixel': 0, 'ypixel': 0,
+            'foreground': foreground, 'started': started, 'env': env if argv else None}
+
+def find_clients(owner, owner_cls, processes, created, argv_of, console_size,
+                 env_of=lambda pid: None, started_of=lambda pid: None):
     """Client objects (docs/SENSOR.md 2.1) for the herdr processes below `owner`.
 
     `foreground` is true only when the window provably shows that client: it
@@ -123,8 +157,9 @@ def find_clients(owner, owner_cls, processes, created, argv_of, console_size):
         if size is None:
             continue # no console: the server or a detached CLI, not a client
         cols, rows = size
-        clients.append({'pid': p.pid, 'argv': argv_of(p.pid) or [], 'tty': None, 'rows': rows, 'cols': cols,
-                        'xpixel': 0, 'ypixel': 0, 'foreground': False})
+        argv = argv_of(p.pid)
+        clients.append(client_entry(p.pid, argv, env_of(p.pid) if argv else None, started_of(p.pid),
+                                    rows=rows, cols=cols, foreground=False))
     sessions = session_count(owner, owner_cls, processes)
     reason = None
     if len(clients) > 1:
@@ -134,6 +169,27 @@ def find_clients(owner, owner_cls, processes, created, argv_of, console_size):
     if clients and reason is None:
         clients[0]['foreground'] = True
     return clients, reason
+
+def all_clients(processes, session_of, own_session, argv_of, env_of, started_of):
+    """Every herdr process that may be a client attached to one of this user's
+    sessions (drag_start's all_clients). Processes in another logon session
+    are left out; one whose session is unknown is kept. The core ignores the
+    server and CLI commands by their argv. A process whose argv cannot be read
+    is reported as a bare herdr with unknown env, which the core counts as
+    attached to every session: unknown must never lower the count."""
+    found = []
+    for p in processes:
+        if p.exe.lower() not in HERDR_NAMES:
+            continue
+        session = session_of(p.pid)
+        if own_session is not None and session is not None and session != own_session:
+            continue
+        argv = argv_of(p.pid)
+        if argv:
+            found.append(client_entry(p.pid, argv, env_of(p.pid), started_of(p.pid)))
+        else:
+            found.append(client_entry(p.pid, [p.exe], None, started_of(p.pid)))
+    return found
 
 @dataclass
 class Tick:

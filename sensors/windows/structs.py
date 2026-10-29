@@ -50,6 +50,17 @@ class CONSOLE_SCREEN_BUFFER_INFO(ctypes.Structure):
 class UNICODE_STRING(ctypes.Structure):
     _fields_ = [('Length', WORD), ('MaximumLength', WORD), ('Buffer', HANDLE)]
 
+class PROCESS_BASIC_INFORMATION(ctypes.Structure):
+    """The 64-bit layout (NtQueryInformationProcess class 0); pointers as c_uint64."""
+    _fields_ = [('ExitStatus', LONG), ('_pad0', DWORD), ('PebBaseAddress', ctypes.c_uint64),
+                ('AffinityMask', ctypes.c_uint64), ('BasePriority', LONG), ('_pad1', DWORD),
+                ('UniqueProcessId', ctypes.c_uint64), ('InheritedFromUniqueProcessId', ctypes.c_uint64)]
+
+# 64-bit PEB and RTL_USER_PROCESS_PARAMETERS offsets (stable since Vista).
+PEB_PROCESS_PARAMETERS = 0x20
+PARAMS_ENVIRONMENT = 0x80
+PARAMS_ENVIRONMENT_SIZE = 0x3F0
+
 def wide_text(array):
     """Decode a NUL-terminated WORD array (UTF-16LE code units)."""
     units = []
@@ -61,3 +72,11 @@ def wide_text(array):
 
 def filetime_value(ft):
     return (ft.dwHighDateTime << 32) | ft.dwLowDateTime
+
+UNIX_EPOCH_FILETIME = 116444736000000000 # 1970-01-01 in 100 ns units since 1601-01-01
+
+def filetime_epoch(value):
+    """A FILETIME value as seconds since the Unix epoch, or None."""
+    if not value or value <= UNIX_EPOCH_FILETIME:
+        return None
+    return (value - UNIX_EPOCH_FILETIME) / 10_000_000

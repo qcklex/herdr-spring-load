@@ -6,7 +6,8 @@ run on Windows yet: everything here is unit tested on macOS with faked Win32.
 
 Python 3.11+ standard library only (`ctypes` with user32, kernel32, dwmapi and
 ntdll). It observes and never acts: no hooks, no injected input, no reading of
-drag data, no elevation, no permission prompt.
+drag data, no elevation, no permission prompt. The only memory it reads from
+another process is the environment block of a herdr process (see below).
 
 | File | Role |
 |---|---|
@@ -74,6 +75,35 @@ started detached), because attaching to another console would detach the
 sensor from its own. A herdr process with no console (the server) is not a
 client.
 
+Each client also carries:
+
+- `started`: the process creation time from `GetProcessTimes`, in seconds
+  since the Unix epoch.
+- `env`: the contract's environment keys only (`HERDR_*`, `XDG_CONFIG_HOME`,
+  `XDG_STATE_HOME`, `HOME`, `APPDATA`, `LOCALAPPDATA`, `USERPROFILE`). They are
+  read from the process's PEB: `NtQueryInformationProcess`
+  (`ProcessBasicInformation`) gives the PEB, whose `ProcessParameters` hold the
+  environment block and its size, and `ReadProcessMemory` copies the block.
+  Names are matched without case, as Windows does. This needs
+  `PROCESS_QUERY_INFORMATION | PROCESS_VM_READ`, which a non-elevated process
+  of the same user grants. Nothing else is read from the block.
+
+`env` is `null` whenever the read is not certain: the process cannot be
+opened (elevated, another user, gone), the sensor or the target is 32-bit,
+or the block is oversized (over 1 MiB), odd-sized, short or torn (no
+terminating empty entry). A client without argv also gets `null`. The core
+never acts on a client with an unknown `env`, and counts it as attached to
+every session, so every failure is a refusal.
+
+`drag_start` carries `all_clients`: every `herdr.exe` in the sensor's logon
+session (`ProcessIdToSessionId`; a process whose session is unknown is kept),
+with `argv`, `env` and `started`, and `rows`, `cols` and `foreground` null.
+The core's exactly-one-client gate counts them, and ignores the server and
+CLI commands by their argv. A process whose argv cannot be read is reported
+as a bare `herdr.exe` with `env` null, so it counts against the gate. If the
+process list cannot be read at all, `all_clients` is `null` and the core
+refuses.
+
 Lookups happen when a drag starts and when the window under the pointer
 changes; clicks reuse a lookup for up to one second.
 
@@ -113,6 +143,9 @@ bundles. Without either, `build` raises a `RuntimeError` that says so.
 - The process chain from Windows Terminal, WezTerm and Alacritty to
   `herdr.exe`, and that each tab or pane starts one console host.
 - What `GetWindowThreadProcessId` reports for a classic console window.
+- The PEB offsets (`ProcessParameters` at 0x20, `Environment` at 0x80,
+  `EnvironmentSize` at 0x3F0) and the environment read on Windows 10 and 11,
+  x64 and ARM64.
 - That attaching to a ConPTY client's console from the probe returns its
   size without side effects.
 - That the GUI launcher passes the redirected stdin and stdout through, so

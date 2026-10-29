@@ -115,8 +115,16 @@ class Sensor:
                 times[pid] = self.win.created(pid)
             return times[pid]
         clients, reason = logic.find_clients(owner, window.cls, processes, created, self.win.argv,
-                                             self.win.console_size)
+                                             self.win.console_size, self.win.environment, self.win.started)
         return owner.exe, clients, reason
+
+    def all_clients(self):
+        """drag_start's all_clients, or None when the process list cannot be read."""
+        processes = self.win.processes()
+        if processes is None:
+            return None
+        return logic.all_clients(processes, self.win.session_of, self.win.own_session(), self.win.argv,
+                                 self.win.environment, self.win.started)
 
     def describe(self, window, peers, refresh):
         if window is None:
@@ -173,7 +181,7 @@ class Sensor:
             window, peers = self.hit(x, y)
             self.window = window.hwnd if window else None
             self.emit({'type': 'drag_start', 't': self.now(), 'x': x, 'y': y, 'kind': 'unknown',
-                       'window': self.describe(window, peers, True)})
+                       'window': self.describe(window, peers, True), 'all_clients': self.all_clients()})
             self.throttle.reset()
             self.throttle.due(self.clock(), (x, y, self.window))
         elif kind == 'drag_end':
