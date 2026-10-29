@@ -23,10 +23,16 @@ takes Linux and Windows sensors. Source references are to herdr v0.9.3.
   replicates the layout.
 - **No uninstall hook,** and plugins must not leave detached processes. The
   watcher is a login service that the build step installs.
-- **Zero permission.** On macOS, `NSPasteboard(name: .drag).changeCount`,
-  `NSEvent.pressedMouseButtons`, `NSEvent.mouseLocation`, the window list's
+- **Zero permission.** On macOS, `NSPasteboard(name: .drag).changeCount`
+  and its type names (never its contents), `NSEvent.pressedMouseButtons`, `NSEvent.mouseLocation`, the window list's
   bounds and owner pid (no titles), `sysctl`/`proc_pidpath` for the process
-  tree and `TIOCGWINSZ` on a client's tty need no grant.
+  tree and `TIOCGWINSZ` on a client's tty need no grant. On X11 the XDND
+  selection owner, XInput2 raw button events and `/proc` need none either.
+- **No Wayland.** Wayland gives an ordinary program no global pointer, no
+  window list and no view of other apps' drags. GNOME and KDE would need a
+  Shell extension or a KWin script, and `/dev/input` needs the `input` group,
+  a permission. The Linux sensor is inert there; on Hyprland its IPC gives
+  windows and clients but no drag, so it is inert too.
 
 ## 2. Parts
 
@@ -57,7 +63,12 @@ Core modules:
 2. **Binding.** A client's env gives its session socket and config path.
    A client whose env is unknown is never bound, and counts as attached.
 3. **Gate.** The session must have exactly one attached client. Otherwise:
-   nothing, and the status action says why.
+   nothing, and the status action says why. A client the sensor cannot see
+   (another machine, account or container) is not counted.
+   The terminal app must also run no more sessions than it shows windows
+   (the window's `sessions` against `1 + peers`): with terminal tabs or
+   splits, herdr in a hidden tab fits the window as well as a visible one.
+   The Windows sensor applies the same rule itself.
 4. **Grid.** The tty's pixel size and the window frame give the cell size.
    Where the grid sits in the frame (titlebar, native tab bar, padding) is
    unknown, so the origin is an interval, and a point maps to a range of
@@ -92,7 +103,8 @@ synthetic ones.
   per window shape (app, frame size, grid) in a JSON file.
 - **First calibration.** When the click's cell range could also cover
   another target of the same kind, the result stays a candidate until a
-  second click agrees.
+  second click agrees. A tab click near a tab's middle usually counts at
+  once; a Space click usually needs a second one.
 - **Disagreement.** A click that contradicts the stored origin becomes a
   candidate and replaces it only when a second click agrees. Until then, and
   after a click no origin can explain, the window is stale: no navigation
@@ -105,8 +117,19 @@ either. If the config file is older than the client process, the client
 shows it. Otherwise the plugin cannot tell, and refuses until an ordinary
 click confirms it, per kind: a click on a different tab confirms tabs and
 panes; a click on a Space below the first confirms Space rows (the first row
-sits where every config puts it). The first calibration never confirms
-anything. A changed config file refuses again.
+sits where every config puts it). A changed config file refuses again.
+
+A confirming click must prove the replica's rectangle, not just fit it:
+
+- The first calibration never confirms anything.
+- A click confirms only when its whole range of possible origins contains
+  the stored origin (within 0.05 cell). A click that merely overlaps it also
+  fits a replica one row off, as after a `row_gap` edit that herdr has not
+  loaded.
+- A click on a kind whose config is unconfirmed never moves the stored
+  origin, so a stale config cannot pull the calibration half a row off.
+- A relearned origin never confirms, and voids earlier confirmations for
+  that client.
 
 ## 6. Sidebar rows and git
 

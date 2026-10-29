@@ -218,6 +218,21 @@ class EngineTest(unittest.TestCase):
         self.assertEqual(self.server.focus_calls(), [])
         self.assertIn('2 herdr clients are attached', engine.status['reason'])
 
+    def test_more_sessions_than_windows_does_nothing(self):
+        # Review N10: herdr in a hidden tab of the hovered terminal fits the window as
+        # well as a visible one. An app that runs more sessions than it shows windows
+        # (tabs, splits) is refused, as the Windows sensor does.
+        target = self.other_pane()
+        window = {**self.window(), 'sessions': 2}
+        engine = self.run_engine(self.drag(0.5, [(self.pane_point(target), 0.8)], window=window))
+        self.assertEqual(self.server.focus_calls(), [])
+        self.assertIn('run herdr alone in its window', engine.status['reason'])
+        # Two sessions in two visible windows (one per window) are fine.
+        other = {'x': 2000, 'y': 0, 'width': 500, 'height': 400}
+        window = {**self.window(peers=[other]), 'sessions': 2}
+        self.run_engine(self.drag(0.5, [(self.pane_point(target), 0.8)], window=window))
+        self.assertEqual(self.server.focus_calls(), [('pane.focus', {'pane_id': target})])
+
     def test_client_of_another_session_does_not_count(self):
         everyone = [self.client(), self.client(pid=5151, argv=('herdr', '--session', 'work')), self.client(pid=6161, argv=('herdr', '--remote', 'box'))]
         target = self.other_pane()
@@ -389,7 +404,59 @@ class EngineTest(unittest.TestCase):
         lines = []
         engine = self.run_engine(steps + self.drag(1.5, [(project_point, 1.0)]), log=lines.append)
         self.assertEqual(self.server.focus_calls(), [('workspace.focus', {'workspace_id': away})], (lines, engine.status))
-        self.assertEqual(lines[0], f'click on space {here}: calibration agrees')
+        self.assertEqual(lines[0], f'click on space {here}: config check, confirmed',
+                         'an unconfirmed kind confirms the config without moving the origin (review N9)')
+
+    def test_stale_row_gap_is_not_confirmed_by_clicks_that_only_overlap(self):
+        # Review N9, the reviewer's reproduction: calibrate, then set spaces.row_gap = 1
+        # in the file without a reload. herdr still draws "assets" on row 3, the
+        # replica now on row 4. Clicks in the lower part of herdr's row overlap the
+        # stored origin; before the fix they returned 'agrees', narrowed the origin
+        # half a row off and confirmed the Space rows.
+        ws = {w['label']: w for w in self.server.snapshot['workspaces']}
+        project, assets = ws['project']['workspace_id'], ws['assets']['workspace_id']
+        x = self.window_xy[0] + 5 * CELL_W
+        row_top = lambda row: self.window_xy[1] + TITLEBAR + row * CELL_H
+        def click(at, target, y):
+            return [(at, lambda: self.server.user_focus('workspace.focus', workspace_id=target)),
+                    (at + 0.05, {'type': 'click', 'x': x, 'y': y, 'window': self.window()})]
+        self.server.user_focus('workspace.focus', workspace_id=project)
+        lines = []
+        engine = self.run_engine(click(0.1, assets, row_top(3) + 2) + click(1.3, project, row_top(2) + 4), log=lines.append)
+        self.assertEqual([l.split('calibration ')[1] for l in lines if 'calibration ' in l], ['learned', 'agrees'])
+        key = next(iter(engine.calibration.data))
+        before = engine.calibration.entry(key)
+
+        self.client_started = time.time() - 3600
+        (self.config/'config.toml').write_text(GOLDEN['config'] + '[ui.sidebar.spaces]\nrow_gap = 1\n')
+        steps = click(0.1, assets, row_top(3) + 15) + click(1.3, project, row_top(2) + 15) \
+            + click(2.5, assets, row_top(3) + 15)
+        replica_assets = (x, row_top(4) + CELL_H / 2)
+        lines = []
+        self.server.calls.clear()
+        engine = self.run_engine(steps + self.drag(3.5, [(replica_assets, 1.0)]), log=lines.append)
+        self.assertEqual([l for l in lines if 'click on space' in l and 'agrees' in l], [], lines)
+        self.assertIn(f'click on space {assets}: config check, not confirmed', lines)
+        self.assertEqual(engine.calibration.entry(key), before, 'the stored origin did not move')
+        self.assertEqual(engine.verified, {})
+        self.assertEqual(self.server.focus_calls(), [])
+
+    def test_relearned_geometry_voids_config_confirmations(self):
+        # Review N9: 'relearned' adopts a new origin; it never confirms, and it voids
+        # what earlier clicks confirmed against the old one.
+        engine = core.Engine(ScriptedSensor([]), self.temp/'support', env=self.env)
+        model = render.build_model(120, 40, self.server.snapshot, render.ui_from_config({'ui': {}}), render.Preferences())
+        tab = next(t for t in model.targets if t.kind == 'tab')
+        binding = core.clients.bind(self.client(), {})
+        key = (4242, str(binding.config_path))
+        engine.verified[key] = (engine.config_stamp(binding.config_path), {'tab', 'pane'})
+        engine.read_model = lambda binding, client: (model, None)
+        engine.calibration.learn = lambda *args, **kwargs: 'relearned'
+        engine.calibration.contains = lambda *args, **kwargs: True
+        grid = geometry.Grid(120, 40, CELL_W, CELL_H, geometry.Interval(0, 2), geometry.Interval(0, 28))
+        engine.learn({'binding': binding, 'client': self.client(), 'key': 'k', 'grid': grid, 'dx': 10, 'dy': 30},
+                     (tab.kind, tab.id))
+        self.assertNotIn(key, engine.verified)
 
     def test_first_space_click_never_confirms_space_rows_and_unknown_stamp_refuses(self):
         # Review H3: spaces.rows and row_gap move only the Spaces below the first.

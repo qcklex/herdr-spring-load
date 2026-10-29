@@ -276,6 +276,13 @@ class Engine:
         locals_ = [c for c in listed if (clients.classify(c['argv']) or ('',))[0] == 'local' and c.get('foreground') is not False]
         if not locals_:
             raise Unavailable(None)   # not a herdr window: nothing to say
+        # A terminal app that runs more sessions than it has windows has tabs or
+        # splits: herdr in a hidden tab fits the window as well as a visible one
+        # (review N10, the Windows sensor's one-session rule).
+        sessions, windows = window.get('sessions'), 1 + len(window.get('peers', []))
+        if isinstance(sessions, int) and sessions > windows:
+            raise Unavailable(f'this terminal runs {sessions} sessions in {windows} window(s), so it has tabs or splits '
+                              'and herdr may be in a hidden one; run herdr alone in its window (no tabs, no splits)')
         fitting = [(c, g) for c in locals_ for g in [geometry.fit(bounds, c, window.get('scale'))] if g]
         if len(fitting) != 1:
             raise Unavailable('cannot tell which herdr client this window shows' if fitting else
@@ -367,6 +374,12 @@ class Engine:
         if pid not in self.starts:
             self.starts[pid] = clients.process_start(pid, self.platform)
         return self.starts[pid]
+
+    def trusted_kinds(self, binding, client):
+        try:
+            return self.check_config(binding, client)
+        except Unavailable:
+            return frozenset()
 
     def check_config(self, binding, client):
         """Which target kinds the replica's config can be trusted for. herdr's
@@ -534,18 +547,36 @@ class Engine:
         (c0, c1), (r0, r1) = click['grid'].cells(click['dx'], click['dy'])
         others = [t for t in model.targets if t.kind == target.kind and t.id != target.id
                   and t.rect.x <= c1 and t.rect.right > c0 and t.rect.y <= r1 and t.rect.bottom > r0]
-        outcome = self.calibration.learn(click['key'], click['grid'], click['dx'], click['dy'], target.rect,
-                                         provisional=bool(others))
+        args = (click['key'], click['grid'], click['dx'], click['dy'], target.rect)
+        # Only a click whose whole range contains the stored origin proves the
+        # replica draws this target where herdr does (review N9).
+        contains = self.calibration.contains(*args)
+        origin, _ = self.calibration.entry(click['key'])
+        if target.kind in ('space', 'tab') and origin is not None \
+                and target.kind not in self.trusted_kinds(click['binding'], click['client']):
+            # The replica's rect for this kind comes from a config the client may
+            # not show: the click can confirm that config, never move the origin.
+            self.log(f'click on {target.kind} {target.id}: config check, '
+                     + ('confirmed' if contains else 'not confirmed'))
+            if contains:
+                self.stale.pop(click['key'], None)
+                self.confirm_config(click, target, model)
+            return
+        outcome = self.calibration.learn(*args, provisional=bool(others))
         self.log(f'click on {target.kind} {target.id}: calibration {outcome}')
         if outcome in ('impossible', 'disagrees'):
             # herdr focused this target, but not where the replica draws it.
             self.stale[click['key']] = ('herdr focused a tab or Space where this replica does not draw it; '
                                         'spring-loading is off for this window until a click agrees again')
+        elif outcome == 'relearned':
+            # The geometry changed under earlier confirmations: they are void.
+            self.verified.pop((click['client']['pid'], str(click['binding'].config_path)), None)
+            self.stale.pop(click['key'], None)
         elif target.kind in ('space', 'tab'):
             self.stale.pop(click['key'], None)
-            # A first calibration fits almost any config, so only a click that
-            # agrees with an origin learned before confirms one (review H3).
-            if outcome in ('agrees', 'relearned'):
+            # A first calibration fits almost any config (review H3), and a click
+            # that only overlaps the stored origin fits a shifted replica too.
+            if outcome == 'agrees' and contains:
                 self.confirm_config(click, target, model)
         self.report(calibrated=self.calibration.calibrated())
 

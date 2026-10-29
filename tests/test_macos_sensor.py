@@ -178,6 +178,78 @@ class MacSensorTest(unittest.TestCase):
             os.close(fd)
             os.waitpid(pid, 0)
 
+    def test_sessions_count_every_tty_below_the_owner(self):
+        # Review N10: herdr on one tty, a plain shell on another (a hidden tab next to
+        # a visible one). The sensor reports two sessions, so the core can refuse.
+        fake = self.fake_herdr()
+        owner_code = '''
+import fcntl, os, pty, struct, subprocess, sys, termios, time
+def start(argv):
+    master, slave = pty.openpty()
+    fcntl.ioctl(slave, termios.TIOCSWINSZ, struct.pack('HHHH', 40, 120, 960, 640))
+    def ctty():
+        os.setsid()
+        fcntl.ioctl(0, termios.TIOCSCTTY, 0)
+    subprocess.Popen(argv, stdin=slave, stdout=slave, stderr=slave, preexec_fn=ctty)
+    return master
+keep = [start([sys.argv[1]]), start(['/bin/sleep', '60'])]
+print('ready', flush=True)
+time.sleep(60)
+'''
+        owner = subprocess.Popen([sys.executable, '-c', owner_code, str(fake)], stdin=subprocess.DEVNULL,
+                                 stdout=subprocess.PIPE, text=True, start_new_session=True)
+        try:
+            self.assertEqual(owner.stdout.readline().strip(), 'ready')
+            deadline = time.monotonic() + 5
+            while True:
+                found = json.loads(self.run_sensor('--clients-for', str(owner.pid)).stdout)
+                if (len(found['clients']) == 1 and found['sessions'] == 2) or time.monotonic() > deadline:
+                    break
+                time.sleep(0.05)
+            self.assertEqual(len(found['clients']), 1, found)
+            self.assertEqual(found['sessions'], 2, 'the plain shell on the other tty counts')
+        finally:
+            os.killpg(owner.pid, 9)
+            owner.wait()
+            owner.stdout.close()
+            subprocess.run(['pkill', '-9', '-f', str(fake)], capture_output=True)
+
+    def test_a_slow_tmux_server_does_not_block_the_lookup(self):
+        # Review N11: list-clients runs off the main loop; a lookup waits at most 0.1 s.
+        slow = self.tmp/'slow'
+        slow.mkdir()
+        tmux = slow/'tmux'
+        source = self.tmp/'tmux.c'
+        source.write_text('#include <string.h>\n#include <unistd.h>\nint main(int c, char **v) {\n'
+                          '  for (int i = 1; i < c; i++) if (!strcmp(v[i], "list-clients")) { sleep(3); return 0; }\n'
+                          '  pause(); return 0; }\n')
+        subprocess.run(['cc', '-o', str(tmux), str(source)], check=True, capture_output=True)
+        owner_code = '''
+import fcntl, os, pty, subprocess, sys, termios, time
+master, slave = pty.openpty()
+def ctty():
+    os.setsid()
+    fcntl.ioctl(0, termios.TIOCSCTTY, 0)
+subprocess.Popen([sys.argv[1], '-S', sys.argv[2]], stdin=slave, stdout=slave, stderr=slave, preexec_fn=ctty)
+print('ready', flush=True)
+time.sleep(60)
+'''
+        owner = subprocess.Popen([sys.executable, '-c', owner_code, str(tmux), str(self.tmp/'none.sock')],
+                                 stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, text=True, start_new_session=True)
+        try:
+            self.assertEqual(owner.stdout.readline().strip(), 'ready')
+            time.sleep(0.2)
+            started = time.monotonic()
+            found = json.loads(self.run_sensor('--clients-for', str(owner.pid)).stdout)
+            elapsed = time.monotonic() - started
+            self.assertEqual(found['clients'], [])
+            self.assertLess(elapsed, 0.8, 'the 3 s tmux query did not hold up the lookup')
+        finally:
+            os.killpg(owner.pid, 9)
+            owner.wait()
+            owner.stdout.close()
+            subprocess.run(['pkill', '-9', '-f', str(tmux)], capture_output=True)
+
     def test_fallbacks_list_nothing_for_an_owner_that_is_not_an_app(self):
         # Review N2, fail-safe: this test process is not responsible for itself (its
         # terminal is), so no herdr client elsewhere on the machine is attributed to it.

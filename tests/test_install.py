@@ -261,6 +261,7 @@ class InstallTest(unittest.TestCase):
         result = subprocess.run(['sh', str(ROOT/'scripts/build.sh'), '--status'], cwd=ROOT, env=self.env,
                                 stdin=subprocess.DEVNULL, capture_output=True, text=True, timeout=60)
         self.assertIn('herdr-spring-load: not running', result.stdout)   # nothing holds helper.lock
+        self.assertIn('a different herdr tab once, or a different Space twice', result.stdout)   # review N12
         self.assertIn('0.10.0', result.stdout)
         with open(self.support/'helper.lock', 'a') as held:   # what a running helper holds
             self.assertTrue(try_lock(held))

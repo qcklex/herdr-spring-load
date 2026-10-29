@@ -120,6 +120,26 @@ class Calibration:
         y = grid.origin_y.intersect(origin[1])
         return grid if x.empty or y.empty else grid.narrowed(x, y)
 
+    @staticmethod
+    def constraint(grid, dx, dy, rect):
+        """Origins (x, y intervals) under which (dx, dy) lies inside `rect`."""
+        bx = grid.origin_x.intersect(Interval(dx - rect.right * grid.cell_width, dx - rect.x * grid.cell_width))
+        by = grid.origin_y.intersect(Interval(dy - rect.bottom * grid.cell_height, dy - rect.y * grid.cell_height))
+        return bx, by
+
+    def contains(self, key, grid, dx, dy, rect, tolerance=0.05):
+        """Whether every origin stored for `key` puts (dx, dy) inside `rect`
+        (within `tolerance` cells). Only such a click proves the replica draws
+        `rect` where herdr does: one whose range merely overlaps the stored
+        origin fits a replica one row off as well (review N9)."""
+        origin, _ = self.entry(key)
+        if origin is None:
+            return False
+        bx, by = self.constraint(grid, dx, dy, rect)
+        tx, ty = tolerance * grid.cell_width, tolerance * grid.cell_height
+        return (not bx.empty and not by.empty and bx.low <= origin[0].low + tx and bx.high >= origin[0].high - tx
+                and by.low <= origin[1].low + ty and by.high >= origin[1].high - ty)
+
     def learn(self, key, grid, dx, dy, rect, provisional=False):
         """The user clicked (dx, dy) and herdr focused the target with cell rect
         `rect`: the origin must put that point inside the rect. Returns
@@ -130,8 +150,7 @@ class Calibration:
         With `provisional` (the click could also have meant another target),
         a first calibration is kept as a candidate ('candidate') until a
         second click agrees with it."""
-        bx = grid.origin_x.intersect(Interval(dx - rect.right * grid.cell_width, dx - rect.x * grid.cell_width))
-        by = grid.origin_y.intersect(Interval(dy - rect.bottom * grid.cell_height, dy - rect.y * grid.cell_height))
+        bx, by = self.constraint(grid, dx, dy, rect)
         if bx.empty or by.empty:
             return 'impossible'
         origin, candidate = self.entry(key)
