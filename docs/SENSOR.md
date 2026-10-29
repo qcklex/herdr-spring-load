@@ -114,6 +114,8 @@ does **not** classify them: the core parses `argv` (local, `--session`,
 | `rows`, `cols` | integer or null | grid size from `TIOCGWINSZ` on the tty (or the console API), null if unknown |
 | `xpixel`, `ypixel` | integer | pixel size from the same call. 0 when the terminal does not report it, or when unknown |
 | `foreground` | boolean or null | true when the client's process group is the foreground group of its tty (`tcgetpgrp`), null when unknown |
+| `started` | number or null | optional. Process start time in seconds since the Unix epoch (macOS `kinfo_proc.p_starttime`, Linux `/proc/<pid>/stat` field 22 plus boot time, Windows `GetProcessTimes`). herdr's client reads `config.toml` when it starts, so the core trusts its replica of that config only when the file is older than the client, or after a calibration click confirmed it. When it is missing, the core asks `ps` where it can. |
+| `env` | object or null | optional. The values of these variables in the client's environment, when the sensor can read them: `HERDR_SESSION`, `HERDR_SOCKET_PATH`, `HERDR_CLIENT_SOCKET_PATH`, `HERDR_CONFIG_PATH`, `XDG_CONFIG_HOME`, `XDG_STATE_HOME`, `HOME` (and on Windows `APPDATA`, `LOCALAPPDATA`, `USERPROFILE`). Keys that are unset are left out. `null` or a missing field means "could not read". herdr picks its session and directories from these, so the core binds a client to a session only when they are known. A client whose `env` is unknown is never acted on, and counts as attached to every session for the one-client gate. Only these keys may be sent; never the rest of the environment. |
 
 `clients` is `[]` when none are found, and `null` when the sensor cannot walk
 the process tree at all.
@@ -146,7 +148,8 @@ fresher than that.
 ### `drag_start`
 
 ```json
-{"type": "drag_start", "t": 12.50, "x": 820.0, "y": 400.0, "kind": "files", "window": { ... }}
+{"type": "drag_start", "t": 12.50, "x": 820.0, "y": 400.0, "kind": "files", "window": { ... },
+ "all_clients": [ ... ]}
 ```
 
 Sent when the OS shows a drag with the primary button held:
@@ -156,6 +159,12 @@ Sent when the OS shows a drag with the primary button held:
 - **X11:** the owner of `XdndSelection` changed while Button1 is in the
   pointer mask.
 - **Windows:** a heuristic, documented by that sensor.
+
+`all_clients` (optional, client array or null) lists every herdr client
+process of this user on the machine, wherever its window is. The core counts
+the clients attached to a session from it (the exactly-one-client gate). When
+it is missing or null, the core lists processes itself where it can (`ps` on
+macOS and Linux) and otherwise stays inert.
 
 `kind` is `"files"` when the drag offers file URLs or file promises (macOS:
 reading the pasteboard `types` is allowed, its contents never are),
