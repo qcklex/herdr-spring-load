@@ -109,7 +109,7 @@ class MoveThrottle:
 # Process tree and tty, from /proc.
 
 def read_stat(pid, proc='/proc'):
-    """(comm, ppid, pgrp, tty_nr, tpgid) from /proc/<pid>/stat, or None."""
+    """(comm, ppid, pgrp, tty_nr, tpgid, starttime in clock ticks after boot) from /proc/<pid>/stat, or None."""
     try:
         with open('%s/%d/stat' % (proc, pid), 'rb') as handle:
             stat = handle.read().decode('utf-8', 'replace')
@@ -118,7 +118,29 @@ def read_stat(pid, proc='/proc'):
     # comm can contain spaces and parentheses, so split after the last ')'.
     comm = stat[stat.index('(') + 1:stat.rindex(')')]
     fields = stat[stat.rindex(')') + 2:].split()
-    return comm, int(fields[1]), int(fields[2]), int(fields[4]), int(fields[5])
+    return comm, int(fields[1]), int(fields[2]), int(fields[4]), int(fields[5]), int(fields[19])
+
+
+def boot_time(proc='/proc'):
+    """Seconds since the epoch at boot (btime in /proc/stat), or None."""
+    try:
+        with open('%s/stat' % proc) as handle:
+            for line in handle:
+                if line.startswith('btime '):
+                    return int(line.split()[1])
+    except (OSError, ValueError):
+        pass
+    return None
+
+
+def started_at(ticks, proc='/proc'):
+    """Process start in seconds since the epoch (docs/SENSOR.md, client.started), or None."""
+    boot = boot_time(proc)
+    try:
+        hz = os.sysconf('SC_CLK_TCK')
+    except (ValueError, OSError):
+        return None
+    return round(boot + ticks / hz, 2) if boot is not None and hz > 0 else None
 
 
 def read_argv(pid, proc='/proc'):
@@ -209,7 +231,7 @@ def read_env(pid, proc='/proc'):
 
 def client_record(pid, stat, proc='/proc', size=winsize):
     """The contract client object for a herdr process with a controlling tty, else None."""
-    comm, _, pgrp, tty_nr, tpgid = stat
+    comm, _, pgrp, tty_nr, tpgid, ticks = stat
     if not tty_nr:
         return None
     argv = read_argv(pid, proc)
@@ -222,7 +244,8 @@ def client_record(pid, stat, proc='/proc', size=winsize):
     if dims:
         rows, cols, xpixel, ypixel = dims
     return {'pid': pid, 'argv': argv, 'tty': path, 'rows': rows, 'cols': cols, 'xpixel': xpixel, 'ypixel': ypixel,
-            'foreground': (pgrp == tpgid) if tpgid > 0 else None, 'env': read_env(pid, proc)}
+            'foreground': (pgrp == tpgid) if tpgid > 0 else None, 'started': started_at(ticks, proc),
+            'env': read_env(pid, proc)}
 
 
 def herdr_clients(owner_pid, proc='/proc', size=winsize):

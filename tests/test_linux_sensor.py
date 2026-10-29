@@ -114,13 +114,14 @@ class TrackerTest(unittest.TestCase):
 class FakeProc:
     """A /proc tree in a temporary directory."""
 
-    def __init__(self, root):
+    def __init__(self, root, btime=1_700_000_000):
         self.root = Path(root)
+        (self.root/'stat').write_text('cpu  1 2 3\nbtime %d\nprocesses 9\n' % btime)
 
-    def add(self, pid, comm, ppid, pgrp=None, tty_nr=0, tpgid=-1, argv=(), exe=None, environ=None):
+    def add(self, pid, comm, ppid, pgrp=None, tty_nr=0, tpgid=-1, argv=(), exe=None, environ=None, start=0):
         d = self.root/str(pid)
         (d/'fd').mkdir(parents=True)
-        fields = ['S', ppid, pgrp or pid, pgrp or pid, tty_nr, tpgid] + [0] * 40
+        fields = ['S', ppid, pgrp or pid, pgrp or pid, tty_nr, tpgid] + [0] * 13 + [start] + [0] * 26
         (d/'stat').write_text('%d (%s) %s\n' % (pid, comm, ' '.join(map(str, fields))))
         (d/'cmdline').write_bytes(b''.join(a.encode() + b'\0' for a in argv))
         if exe:
@@ -140,6 +141,7 @@ class ProcTest(unittest.TestCase):
         p.add(30, 'xterm', 1, argv=['xterm', '-e', 'herdr'])
         p.add(31, 'sh', 30, pgrp=31, tty_nr=PTS(3), tpgid=41, argv=['sh'])
         p.add(41, 'herdr', 31, pgrp=41, tty_nr=PTS(3), tpgid=41, argv=['herdr'], exe='/usr/local/bin/herdr',
+              start=12345 * os.sysconf('SC_CLK_TCK'),
               environ={'HOME': '/home/t', 'HERDR_SESSION': 'work', 'SECRET_TOKEN': 'x', 'PATH': '/bin'})
         p.add(42, 'herdr', 41, pgrp=41, tty_nr=PTS(3), tpgid=41, argv=['herdr', 'plugin', 'x'])
         p.add(50, 'herdr', 1, argv=['herdr', 'server'])                     # no tty, not below xterm
@@ -157,8 +159,9 @@ class ProcTest(unittest.TestCase):
         found = {c['pid']: c for c in self.clients()}
         self.assertEqual(sorted(found), [41, 42, 60])
         self.assertEqual(found[41], {'pid': 41, 'argv': ['herdr'], 'tty': '/dev/pts/3', 'rows': 36, 'cols': 120,
-                                     'xpixel': 0, 'ypixel': 0, 'foreground': True,
+                                     'xpixel': 0, 'ypixel': 0, 'foreground': True, 'started': 1_700_012_345,
                                      'env': {'HOME': '/home/t', 'HERDR_SESSION': 'work'}})
+        self.assertEqual(contract.validate_client(found[41])['started'], 1_700_012_345)
         self.assertIsNone(found[42]['env'])                             # unreadable environ: null
         self.assertEqual(found[42]['argv'], ['herdr', 'plugin', 'x'])   # reported, not classified
         self.assertEqual(found[60]['tty'], '/dev/pts/300')
