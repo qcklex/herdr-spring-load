@@ -10,19 +10,30 @@ out=${OUT:-/out}
 mkdir -p "$out"
 cd "$HOME"
 
+fail() { echo "run_in_container.sh: $*" >&2; exit 1; }
+
 Xvfb :99 -screen 0 1280x800x24 -nolisten tcp >"$out/xvfb.log" 2>&1 &
-for _ in $(seq 50); do xdpyinfo >/dev/null 2>&1 && break; sleep 0.1; done
+xvfb=$!
+ready=
+for _ in $(seq 100); do
+  if xdpyinfo >/dev/null 2>&1; then ready=1; break; fi
+  kill -0 "$xvfb" 2>/dev/null || break
+  sleep 0.1
+done
+[ -n "$ready" ] || { cat "$out/xvfb.log" >&2; fail "Xvfb did not come up on $DISPLAY"; }
 openbox >"$out/openbox.log" 2>&1 &
 sleep 1
 
 touch /tmp/drop-me.txt
 xterm -u8 -name herdrxterm -geometry 120x36+400+150 -fa 'DejaVu Sans Mono' -fs 10 -e herdr &
 python3 "$repo/tests/linux/drag_source.py" /tmp/drop-me.txt >"$out/source.log" 2>&1 &
-for _ in $(seq 100); do
-  pgrep -x herdr >/dev/null && xdotool search --classname herdrxterm >/dev/null 2>&1 \
-    && xdotool search --name drag-source >/dev/null 2>&1 && break
+ready=
+for _ in $(seq 200); do
+  if pgrep -x herdr >/dev/null && xdotool search --classname herdrxterm >/dev/null 2>&1 \
+      && xdotool search --name drag-source >/dev/null 2>&1; then ready=1; break; fi
   sleep 0.1
 done
+[ -n "$ready" ] || fail "xterm with herdr, or the drag source, did not appear within 20 s"
 sleep 3   # let herdr start its server and draw
 
 python3 "$repo/sensors/linux/build.py" /tmp/herdr-spring-load-sensor-linux
@@ -34,10 +45,18 @@ sleep 1
 
 term=$(xdotool search --classname herdrxterm | head -1)
 src=$(xdotool search --name drag-source | head -1)
+[ -n "$term" ] && [ -n "$src" ] || fail "no xterm or drag-source window (xterm: '$term', source: '$src')"
 eval "$(xdotool getwindowgeometry --shell "$src")"; sx=$((X + WIDTH / 2)); sy=$((Y + HEIGHT / 2))
 eval "$(xdotool getwindowgeometry --shell "$term")"; tx=$((X + WIDTH / 2)); ty=$((Y + HEIGHT / 2))
-xterm_pid=$(pgrep -x xterm | head -1)
-client=$(ps -o pid=,tty=,comm= --ppid "$xterm_pid" | awk '$3 == "herdr" && $2 ~ /pts/ {print $1, "/dev/" $2; exit}')
+xterm_pid=$(pgrep -x xterm | head -1 || true)
+[ -n "$xterm_pid" ] || fail "no xterm process"
+client=
+for _ in $(seq 50); do
+  client=$(ps -o pid=,tty=,comm= --ppid "$xterm_pid" | awk '$3 == "herdr" && $2 ~ /pts/ {print $1, "/dev/" $2; exit}')
+  [ -n "$client" ] && break
+  sleep 0.1
+done
+[ -n "$client" ] || fail "no herdr client with a pts below xterm $xterm_pid"
 printf '{"window":"%s","xterm_pid":%s,"client_pid":%s,"client_tty":"%s","target":[%s,%s],"source":[%s,%s]}\n' \
   "$term" "$xterm_pid" "${client% *}" "${client#* }" "$tx" "$ty" "$sx" "$sy" >"$out/truth.json"
 

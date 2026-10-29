@@ -115,7 +115,8 @@ class Sensor:
                 times[pid] = self.win.created(pid)
             return times[pid]
         clients, reason = logic.find_clients(owner, window.cls, processes, created, self.win.argv,
-                                             self.win.console_size, self.win.environment, self.win.started)
+                                             self.win.console_size, self.win.environment, self.win.started,
+                                             owner_hwnd=window.hwnd, text_area=self.win.text_area)
         return owner.exe, clients, reason
 
     def all_clients(self):
@@ -224,7 +225,7 @@ def main(argv=None, win_factory=None, platform=None):
     if '--console-probe' in argv:
         from .win32 import probe_console
         size = probe_console(int(argv[argv.index('--console-probe') + 1]))
-        print(json.dumps({'cols': size[0], 'rows': size[1]} if size else None))
+        print(json.dumps({'cols': size[0], 'rows': size[1], 'hwnd': size[2]} if size else None))
         return 0
     sensor = None
     stop = threading.Event()
