@@ -27,11 +27,12 @@ observes, and selects through herdr's own API.
   systemd user unit. Install needs python3 only. On Hyprland it is detected
   but inert: it sees windows and clients, but no drag. Other Wayland
   compositors are not supported.
-- Windows sensor (experimental, unit tested with faked Win32, not yet run on
-  Windows): per-monitor DPI aware, a drag heuristic from the mouse capture
-  and the cursor, the console size through a short-lived probe, and the
-  client environment from the process's PEB. With herdr in a tabbed
-  terminal it works only with herdr alone in its window. It is packed
+- Windows sensor (experimental; the API, the gate and the grid fit run on
+  real Windows in CI, a real drag has not): per-monitor DPI aware, a drag
+  heuristic from the mouse capture and the cursor, the console size through
+  a short-lived probe, a classic console window's text area as the pixel
+  size, and the client environment from the process's PEB. Windows Terminal
+  and other ConPTY terminals report no pixel size, so they stay inert. It is packed
   behind pip's script launcher and starts from a per-user Run key entry;
   the plugin entries are `status-windows`, `setup-windows` and
   `remove-helper-windows`. Install runs `python -B setup.py`.

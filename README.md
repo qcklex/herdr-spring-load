@@ -40,7 +40,7 @@ tab once, or a different Space twice, without dragging anything. See
 | Linux, X11 session | Supported. Covered by a container end-to-end test with xterm and a GTK drag source. |
 | Linux, Hyprland | Detected but inert: Hyprland's IPC gives the pointer and the windows, but no drag signal ([sensors/linux/README.md](sensors/linux/README.md)) |
 | Linux, GNOME, KDE or other Wayland compositors | Not supported (see [Known limits](#known-limits)) |
-| Windows | Experimental: unit tested with faked Win32 only, not yet run on Windows ([sensors/windows/README.md](sensors/windows/README.md)) |
+| Windows | Experimental, classic console windows only: Windows Terminal reports no pixel size, so it stays inert. The API, the gate and the grid fit have run on real Windows in CI; a real drag has not ([sensors/windows/README.md](sensors/windows/README.md)) |
 
 ## Requirements
 
@@ -50,7 +50,9 @@ tab once, or a different Space twice, without dragging anything. See
 - A terminal that reports its size in pixels to the programs in it
   (`TIOCGWINSZ` `ws_xpixel` and `ws_ypixel`). Most do. Without it nothing
   works, and the status says "no herdr client in this window matches its
-  size (or the terminal reports no pixel size)".
+  size (or the terminal reports no pixel size)". On Windows only a classic
+  console window gives one (the sensor reads its text area); Windows
+  Terminal and other ConPTY terminals do not, so they stay inert.
 - Per OS:
 
 | OS | Also needs |
@@ -276,7 +278,10 @@ same way. While the plugin is disabled, it pauses.
   Wayland; use an X11 session. On Hyprland the sensor sees windows and
   clients but no drag, so it stays inert.
 - **Windows** is experimental. Windows has no system-wide drag signal, so
-  the sensor infers a drag from the mouse capture and the cursor.
+  the sensor infers a drag from the mouse capture and the cursor. Only
+  herdr in a classic console window (`conhost`) works: Windows Terminal,
+  WezTerm, Alacritty and other ConPTY terminals draw their own text area and
+  report no pixel size, so spring-loading stays off there.
 
 **Drags and other tools**
 
@@ -296,14 +301,14 @@ repository root:
 python3 -m unittest discover -s tests
 ```
 
-Result: 211 tests, 1 skipped (the opt-in isolated test below). They
+Result: 216 tests, 1 skipped (the opt-in isolated test below). They
 cover:
 
 - the replica against golden screens recorded from herdr 0.9.3, cell
   geometry and calibration, click attribution from herdr's focus events,
   config confirmation, the one-client gate, and dwell timing;
 - the herdr API over Unix sockets, and over Windows named pipes with a faked
-  pipe (not yet run on Windows);
+  pipe;
 - the sensor contract;
 - the macOS sensor, built and run through its test hooks: client lookup
   through the process tree, tmux and the responsible process, the session
@@ -328,6 +333,11 @@ calibrates; then held drags open a Space, a tab and a pane through herdr's
 API, and the terminal's native drop still lands in that pane. With a second
 client attached, nothing happens.
 
+On Windows, CI runs `tests/windows/e2e.py` with herdr 0.9.3 on a real
+Windows runner: the core drives herdr over its named pipe, the one-client
+gate holds, and a real classic console window gives a pixel size the core
+fits a grid to.
+
 On Linux, `sh tests/linux/run.sh` runs a real XDND drag in a Debian
 container (Xvfb, openbox, xterm running herdr 0.9.3, a GTK drag source) and
 compares the sensor's output with `ps` and xdotool.
@@ -338,7 +348,8 @@ Not verified yet:
 - that reading the drag pasteboard never shows macOS's pasteboard privacy
   prompt (it reads its change count and type names, never its contents, so
   it should not);
-- any run on real Windows;
+- a real drag on Windows, and any Windows terminal other than the classic
+  console;
 - Hyprland on a real session;
 - the responsible-process fallback with a real iTerm2 (the tmux fallback is
   tested with a real tmux when one is installed);
