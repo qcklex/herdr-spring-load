@@ -55,7 +55,7 @@ def run(args):
     (support/'helper.pid').write_text(str(os.getpid()))
     sensor = None
     def uninstall():
-        state = json.loads((support/'state.json').read_text())
+        state = json.loads((support/'state.json').read_text(encoding='utf-8'))
         if sensor is not None:
             sensor.close()   # Windows cannot delete a running sensor executable
         return subprocess.run([state['python'], state['uninstall'], '--self'], stdin=subprocess.DEVNULL, timeout=120).returncode
@@ -77,7 +77,7 @@ def run(args):
 def status(args):
     path = support_dir()/'status.json'
     try:
-        data = json.loads(path.read_text())
+        data = json.loads(path.read_text(encoding='utf-8'))
     except (OSError, ValueError):
         print('herdr-spring-load: no status yet. Is the helper running? Open the "Set up herdr-spring-load" pane to (re)install it.')
         return
