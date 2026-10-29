@@ -2,8 +2,9 @@
 
     python tests/windows/e2e.py
 
-In a scratch profile it starts a herdr client in its own console (the server
-autospawns), then checks, with the real Win32 calls (RealWin32, no fakes):
+In a scratch profile it starts a herdr client in a classic console window
+(conhost.exe started explicitly, never the default-terminal handoff; the
+server autospawns), then checks, with the real Win32 calls (RealWin32, no fakes):
 
 1. the sensor's process reads on this process itself: process list, argv,
    PEB environment, start time;
@@ -16,7 +17,12 @@ autospawns), then checks, with the real Win32 calls (RealWin32, no fakes):
    accepts for the window's real bounds;
 5. the core, fed that real window description, focuses a Space, a tab and
    a pane through the API with one client attached;
-6. with a second client attached, it refuses.
+6. with a second client attached, it refuses;
+7. a client under ConPTY (a pseudo console this test creates, as Windows
+   Terminal does) reports pixel size 0, and the core stays idle with the
+   documented status: no client matches the window, the terminal reports no
+   pixel size. The terminal window around it is synthesized (a Windows
+   Terminal window class owned by this process, the ConPTY host).
 
 Pointer events are scripted (FeedSensor, as tests/test_isolated_herdr.py),
 and the calibration is seeded from the console's real client origin
@@ -29,7 +35,6 @@ import os
 from pathlib import Path
 import queue
 import shutil
-import subprocess
 import sys
 import threading
 import time
@@ -38,6 +43,7 @@ import tomllib
 from common import ROOT, CONFIG, Check, profile_env, require_windows, scratch, wait, write_config
 
 require_windows()
+from launch import ClassicClient, ConPtyClient
 from spring_load import contract, engine as core, geometry, herdr_api, render
 from sensors.windows import logic, sensor as windows_sensor
 from sensors.windows.win32 import RealWin32
@@ -64,9 +70,6 @@ class FeedSensor:
             return self.queue.get(timeout=timeout)
         except queue.Empty:
             return None
-
-def start_client(herdr, env, cwd):
-    return subprocess.Popen([herdr], env=env, cwd=cwd, creationflags=subprocess.CREATE_NEW_CONSOLE)
 
 def main():
     check = Check('e2e')
@@ -98,10 +101,11 @@ def main():
     sock = str(config.parent/'herdr.sock')
     api = lambda method, **params: herdr_api.request(sock, method, params, timeout=3)
     snap = lambda: herdr_api.snapshot(sock, timeout=3)
-    first = second = runner = None
+    first = second = pty = runner = None
     running = threading.Event()
     try:
-        first = start_client(herdr, env, str(base))
+        first = ClassicClient(herdr, env, str(base), win.processes)
+        check.ok('herdr started by an explicit conhost.exe', first.pid, {'conhost': first.host.pid, 'herdr': first.pid})
         check.ok('isolated server answers over the named pipe',
                  wait(lambda: api('workspace.list').get('workspaces'), 20, (OSError, ValueError, KeyError, herdr_api.ApiError)),
                  herdr_api.pipe_name(sock))
@@ -219,7 +223,7 @@ def main():
         feed.put({'type': 'drag_end', 'x': 0, 'y': 0, 'reason': 'released'})
 
         # 6. A second client: refuse.
-        second = start_client(herdr, env, str(base))
+        second = ClassicClient(herdr, env, str(base), win.processes)
         def both():
             listed = [c for c in reader.all_clients() or [] if len(c['argv']) == 1]
             return listed if len(listed) == 2 else None
@@ -234,6 +238,51 @@ def main():
         check.ok('two clients: the core does not act', not changed)
         check.ok('two clients: the status says why', '2 herdr clients are attached' in (engine.status['reason'] or ''),
                  engine.status['reason'])
+
+        # 7. ConPTY (the Windows Terminal limit): pixel size 0, the core stays idle.
+        first.close()
+        second.close()
+        check.ok('classic clients closed', wait(lambda: not [p for p in herdr_processes() if p.pid in (first.pid, second.pid)]))
+        pty = ConPtyClient(herdr, env, str(base), cols=120, rows=30)
+        size = wait(lambda: win.console_size(pty.pid), 10)
+        check.ok('ConPTY client: console size through the probe child', size and size[:2] == (120, 30), size)
+        pseudo = win.window(size[2]) if size[2] else None
+        check.ok('ConPTY client: its console window is the pseudo window',
+                 pseudo and pseudo.cls == 'PseudoConsoleWindow', pseudo and {'class': pseudo.cls, 'bounds': pseudo.bounds.as_json()})
+        host = logic.TopWindow(hwnd=0x7FFF0001, pid=os.getpid(), tid=0, cls='CASCADIA_HOSTING_WINDOW_CLASS',
+                               bounds=logic.Rect(100, 50, 120 * 8 + 2, 30 * 16 + 40))
+        reader.clients.clear()
+        conpty = contract.validate_window(reader.describe(host, [], True))
+        listed = [c for c in conpty['clients'] or [] if c['pid'] == pty.pid]
+        check.ok('ConPTY client: the sensor finds it below its host', listed,
+                 {'clients': conpty['clients'], 'reason': reader.clients.get(host.hwnd, (None,) * 4)[3]})
+        client = listed[0]
+        check.ok('ConPTY client: pixel size 0', (client['xpixel'], client['ypixel']) == (0, 0),
+                 {k: client[k] for k in ('cols', 'rows', 'xpixel', 'ypixel', 'foreground')})
+        check.ok('ConPTY client: shown as the foreground client (one session), so only the pixel size refuses',
+                 client['foreground'] is True, client['foreground'])
+        check.ok('ConPTY client: no core geometry',
+                 geometry.fit((conpty['bounds']['width'], conpty['bounds']['height']), client, conpty['scale']) is None)
+        everyone = wait(lambda: (lambda found: found if any(c['pid'] == pty.pid for c in found) else None)(
+            [c for c in reader.all_clients() or [] if len(c['argv']) == 1]), 10)
+        check.ok('ConPTY client: all_clients lists it alone', everyone and len(everyone) == 1, everyone)
+        time.sleep(1.2)
+        before = (snap()['focused_workspace_id'], snap()['focused_tab_id'], snap()['focused_pane_id'])
+        middle = (host.bounds.x + host.bounds.width / 2, host.bounds.y + host.bounds.height / 2)
+        feed.put({'type': 'drag_start', 'x': middle[0], 'y': middle[1], 'kind': 'files', 'window': conpty,
+                  'all_clients': everyone})
+        until = time.time() + 2.5
+        while time.time() < until:
+            feed.put({'type': 'drag_move', 'x': middle[0], 'y': middle[1], 'window': conpty})
+            time.sleep(0.05)
+        during = engine.status.get('reason') or ''
+        feed.put({'type': 'drag_end', 'x': middle[0], 'y': middle[1], 'reason': 'released'})
+        after = (snap()['focused_workspace_id'], snap()['focused_tab_id'], snap()['focused_pane_id'])
+        check.ok('ConPTY client: the core does not act', after == before, {'before': before, 'after': after})
+        check.ok('ConPTY client: the status says the terminal reports no pixel size',
+                 'reports no pixel size' in during, during)
+        check.ok('ConPTY client: the core is idle after the drag', wait(lambda: engine.status['state'] == 'idle', 3),
+                 engine.status)
     finally:
         running.set()
         if runner:
@@ -242,12 +291,12 @@ def main():
             api('server.stop')
         except (OSError, ValueError, herdr_api.ApiError):
             pass
-        for process in (first, second):
-            if process and process.poll() is None:
-                process.kill()
+        for client in (first, second, pty):
+            if client:
+                client.close()
     check.done({'patched': ['seeded calibration (from ClientToScreen)']})
     print('windows e2e: real Win32 reads, real console pixel size and geometry, focus round-trip, '
-          'core with one client, refusal with two PASS')
+          'core with one client, refusal with two, ConPTY inert with a clear status PASS')
 
 if __name__ == '__main__':
     main()
