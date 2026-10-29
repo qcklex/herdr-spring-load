@@ -1,0 +1,113 @@
+{
+ "name": "mobile",
+ "herdr": "0.9.3",
+ "cols": 60,
+ "rows": 24,
+ "config": "onboarding = false\n[update]\nversion_check = false\nmanifest_check = false\n",
+ "socket": "$TEMP/c/herdr/herdr.sock",
+ "temp": "$TEMP",
+ "preferences": null,
+ "git_repos": [],
+ "snapshot": {
+  "version": "0.9.3",
+  "protocol": 22,
+  "focused_workspace_id": "w1",
+  "focused_tab_id": "w1:t1",
+  "focused_pane_id": "w1:p1",
+  "workspaces": [
+   {
+    "workspace_id": "w1",
+    "number": 1,
+    "label": "~",
+    "focused": true,
+    "pane_count": 1,
+    "tab_count": 1,
+    "active_tab_id": "w1:t1",
+    "agent_status": "unknown"
+   }
+  ],
+  "tabs": [
+   {
+    "tab_id": "w1:t1",
+    "workspace_id": "w1",
+    "number": 1,
+    "label": "1",
+    "focused": true,
+    "pane_count": 1,
+    "agent_status": "unknown"
+   }
+  ],
+  "panes": [
+   {
+    "pane_id": "w1:p1",
+    "terminal_id": "term_65ef327db8c4a1",
+    "workspace_id": "w1",
+    "tab_id": "w1:t1",
+    "focused": true,
+    "cwd": "$TEMP/home",
+    "foreground_cwd": "$TEMP/home",
+    "agent_status": "unknown",
+    "scroll": {
+     "offset_from_bottom": 0,
+     "max_offset_from_bottom": 0,
+     "viewport_rows": 22
+    },
+    "revision": 0
+   }
+  ],
+  "layouts": [
+   {
+    "workspace_id": "w1",
+    "tab_id": "w1:t1",
+    "zoomed": false,
+    "area": {
+     "x": 0,
+     "y": 0,
+     "width": 60,
+     "height": 22
+    },
+    "focused_pane_id": "w1:p1",
+    "panes": [
+     {
+      "pane_id": "w1:p1",
+      "focused": true,
+      "rect": {
+       "x": 0,
+       "y": 0,
+       "width": 60,
+       "height": 22
+      }
+     }
+    ],
+    "splits": []
+   }
+  ],
+  "agents": []
+ },
+ "screen": [
+  " · ~                                        tab 1 │         ",
+  " no agents                                        │ switch  ",
+  "$                                                           ",
+  "                                                            ",
+  "                                                            ",
+  "                                                            ",
+  "                                                            ",
+  "                                                            ",
+  "                                                            ",
+  "                                                            ",
+  "                                                            ",
+  "                                                            ",
+  "                                                            ",
+  "                                                            ",
+  "                                                            ",
+  "                                                            ",
+  "                                                            ",
+  "                                                            ",
+  "                                                            ",
+  "                                                            ",
+  "                                                            ",
+  "                                                            ",
+  "                                                            ",
+  "                                                            "
+ ]
+}
