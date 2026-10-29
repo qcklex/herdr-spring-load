@@ -341,9 +341,32 @@ class BuildTest(unittest.TestCase):
         self.assertEqual(json.loads(x11.stdout)['capabilities'], ['drag', 'click', 'window', 'clients'])
         none = self.run_sensor({}, '--check')
         self.assertEqual(json.loads(none.stdout)['capabilities'], [])
-        hypr = json.loads(self.run_sensor({'WAYLAND_DISPLAY': 'w', 'HYPRLAND_INSTANCE_SIGNATURE': 's'},
-                                          '--check').stdout)
-        self.assertEqual((hypr['coords'], hypr['capabilities']), ('hyprland-layout', ['window', 'clients']))
+
+    def test_hyprland_check_hello_is_valid_and_inert(self):
+        # Review N13: setup validates the --check hello, and the core needs a valid
+        # one to report inert. Hyprland's hello was rejected (coords 'hyprland-layout').
+        hyprland_env = {'WAYLAND_DISPLAY': 'wayland-1', 'XDG_SESSION_TYPE': 'wayland',
+                        'HYPRLAND_INSTANCE_SIGNATURE': 'sig', 'XDG_RUNTIME_DIR': self.tmp.name}
+        check = self.run_sensor(hyprland_env, '--check')
+        self.assertEqual(check.returncode, 0)
+        lines = check.stdout.splitlines()
+        self.assertEqual(len(lines), 1)
+        hello = contract.validate_hello(json.loads(lines[0]))
+        self.assertEqual((hello['sensor'], hello['capabilities']), ('linux-hyprland', []))
+
+    def test_hyprland_run_is_inert_with_a_reason(self):
+        with tempfile.TemporaryDirectory() as runtime:
+            os.makedirs(os.path.join(runtime, 'hypr', 'sig'))
+            open(os.path.join(runtime, 'hypr', 'sig', '.socket.sock'), 'w').close()
+            for env in ({'HYPRLAND_INSTANCE_SIGNATURE': 'sig', 'XDG_RUNTIME_DIR': runtime},     # IPC socket found
+                        {'HYPRLAND_INSTANCE_SIGNATURE': 'none', 'XDG_RUNTIME_DIR': runtime}):  # no socket
+                result = self.run_sensor({'WAYLAND_DISPLAY': 'wayland-1', **env}, input='')
+                self.assertEqual(result.returncode, 0)
+                lines = result.stdout.splitlines()
+                self.assertEqual(contract.check_stream(lines), (True, 'ok'))
+                hello, why = map(json.loads, lines[:2])
+                self.assertEqual(contract.validate_hello(hello)['capabilities'], [])
+                self.assertEqual((why['type'], why['level']), ('status', 'error'))
 
     def test_inert_sensor_stays_up_until_stdin_closes(self):
         started = time.monotonic()

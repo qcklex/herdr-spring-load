@@ -5,7 +5,7 @@ This sensor implements the sensor contract in `docs/SENSOR.md`. It is Python 3 s
 | session | backend | capabilities |
 |---|---|---|
 | X11 (`DISPLAY`, no `WAYLAND_DISPLAY`) | `x11.py` | drag, click, window, clients |
-| Wayland, Hyprland | `hyprland.py` | window, clients (no drag: inert) |
+| Wayland, Hyprland | `hyprland.py` | none: inert (no drag signal), with a status saying why |
 | Wayland, any other compositor | none | none (inert, with a status message) |
 
 ## X11
@@ -35,7 +35,7 @@ Wayland gives a third-party client no global pointer, no window list, no view of
 
 | compositor | pointer | windows and pid | drag signal | status |
 |---|---|---|---|---|
-| Hyprland | IPC `j/cursorpos` | IPC `j/clients`, `j/monitors` | none | `hyprland.py`: window and clients only, so the core stays inert |
+| Hyprland | IPC `j/cursorpos` | IPC `j/clients`, `j/monitors` | none | `hyprland.py`: an inert hello (no capabilities) and an error status, so the core reports inert; window lookup is kept for `--verbose` |
 | sway and other wlroots | none in IPC | `swaymsg -t get_tree` | none | not done |
 | KDE Plasma | a KWin script (`workspace.cursorPos`) | a KWin script (`windowList()`, `pid`, `frameGeometry`) | not exposed to scripts | needs an installed KWin script plus D-Bus: skipped |
 | GNOME | a Shell extension (`global.get_pointer()`) | a Shell extension (window actors, `get_pid()`) | in-shell grabs only, not client DnD | needs a Shell extension per GNOME release: skipped |
