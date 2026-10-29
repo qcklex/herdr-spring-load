@@ -192,8 +192,8 @@ func executablePath(_ pid: Int32) -> String? {
     return String(cString: buffer)
 }
 
-/// Runs a read-only query with a 1 s limit; stdout, or nil.
-func query(_ executable: String, _ args: [String]) -> String? {
+/// Runs a read-only query with a time limit; stdout, or nil.
+func query(_ executable: String, _ args: [String], limit: Double = 1) -> String? {
     let process = Process()
     process.executableURL = URL(fileURLWithPath: executable)
     process.arguments = args
@@ -202,12 +202,53 @@ func query(_ executable: String, _ args: [String]) -> String? {
     process.standardError = FileHandle.nullDevice
     process.standardInput = FileHandle.nullDevice
     do { try process.run() } catch { return nil }
-    let deadline = Date().addingTimeInterval(1)
+    let deadline = Date().addingTimeInterval(limit)
     while process.isRunning && Date() < deadline { usleep(10_000) }
     if process.isRunning { process.terminate(); return nil }
     let data = out.fileHandleForReading.readDataToEndOfFile()
     return process.terminationStatus == 0 ? String(decoding: data, as: UTF8.self) : nil
 }
+
+/// `tmux list-clients` answers per tmux server, off the main run loop: a slow
+/// tmux server must not hold up drag_move (review N11). A lookup waits at most
+/// `wait` seconds for a fresh answer, and otherwise uses the last one (or none).
+final class TmuxQueries {
+    struct Entry { var stamp: Double; var lines: [String]?; var running: Bool }
+    let lock = NSLock()
+    var entries: [String: Entry] = [:]
+    let fresh = 1.0
+    let wait = 0.1
+    let limit = 0.5
+
+    func clients(tmux: String, socket: String) -> [String]? {
+        let key = tmux + "\u{0}" + socket
+        lock.lock()
+        let t = now()
+        var entry = entries[key] ?? Entry(stamp: -Double.infinity, lines: nil, running: false)
+        if t - entry.stamp < fresh || entry.running {
+            lock.unlock()
+            return entry.lines
+        }
+        entry.running = true
+        entries[key] = entry
+        lock.unlock()
+        let done = DispatchSemaphore(value: 0)
+        DispatchQueue.global(qos: .userInitiated).async {
+            let out = query(tmux, ["-S", socket, "list-clients", "-F", "#{client_tty}\t#{pane_tty}"], limit: self.limit)
+            self.lock.lock()
+            self.entries[key] = Entry(stamp: now(), lines: out.map { $0.split(separator: "\n").map(String.init) },
+                                      running: false)
+            self.lock.unlock()
+            done.signal()
+        }
+        _ = done.wait(timeout: .now() + wait)
+        lock.lock()
+        defer { lock.unlock() }
+        return entries[key]?.lines
+    }
+}
+
+let tmuxQueries = TmuxQueries()
 
 /// The pane ttys that the tmux clients in this window show. A tmux client runs
 /// in the window (below its owner); its server is a daemon, so herdr in a tmux
@@ -228,8 +269,8 @@ func tmuxPaneTTYs(below root: Int32, in table: [Proc]) -> Set<String> {
             i += 1
         }
         let path = socket ?? ((env?["TMUX_TMPDIR"] ?? "/tmp") + "/tmux-\(getuid())/" + name)
-        guard let out = query(tmux, ["-S", path, "list-clients", "-F", "#{client_tty}\t#{pane_tty}"]) else { continue }
-        for line in out.split(separator: "\n") {
+        guard let lines = tmuxQueries.clients(tmux: tmux, socket: path) else { continue }
+        for line in lines {
             let fields = line.split(separator: "\t", omittingEmptySubsequences: false).map(String.init)
             if fields.count == 2 && fields[0] == clientTTY { panes.insert(fields[1]) }
         }
