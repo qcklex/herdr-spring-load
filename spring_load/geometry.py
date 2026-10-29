@@ -80,8 +80,17 @@ def calibration_key(app, bounds, client):
     return '|'.join(str(v) for v in (app or '?', round(bounds[0]), round(bounds[1]), client.get('cols'), client.get('rows'),
                                      client.get('xpixel'), client.get('ypixel')))
 
+def _interval_pair(value):
+    if isinstance(value, list) and len(value) == 4 and all(isinstance(v, (int, float)) for v in value):
+        return Interval(value[0], value[1]), Interval(value[2], value[3])
+    return None
+
 class Calibration:
-    """Learned origin intervals per window shape, kept in a small JSON file."""
+    """Learned origin intervals per window shape, kept in a small JSON file.
+    Each entry is {"origin": [x0, x1, y0, y1], "candidate": [...] or null}. A
+    click that disagrees with the stored origin becomes a candidate and replaces
+    the origin only when a second click agrees with it, so one misattributed
+    click cannot overwrite a good calibration."""
     def __init__(self, path):
         self.path = Path(path)
         try:
@@ -91,29 +100,48 @@ class Calibration:
         except (OSError, ValueError):
             self.data = {}
 
+    def entry(self, key):
+        value = self.data.get(key)
+        if isinstance(value, list):   # the first 0.3.0 format: a bare origin
+            value = {'origin': value, 'candidate': None}
+        if not isinstance(value, dict):
+            return None, None
+        return _interval_pair(value.get('origin')), _interval_pair(value.get('candidate'))
+
     def apply(self, key, grid):
-        entry = self.data.get(key)
-        if not isinstance(entry, list) or len(entry) != 4:
+        origin, _ = self.entry(key)
+        if origin is None:
             return grid
-        x = grid.origin_x.intersect(Interval(entry[0], entry[1]))
-        y = grid.origin_y.intersect(Interval(entry[2], entry[3]))
+        x = grid.origin_x.intersect(origin[0])
+        y = grid.origin_y.intersect(origin[1])
         return grid if x.empty or y.empty else grid.narrowed(x, y)
 
     def learn(self, key, grid, dx, dy, rect):
-        """The user clicked (dx, dy) and herdr focused the target with cell
-        rect `rect`: the origin must put that point inside the rect."""
-        x = Interval(dx - rect.right * grid.cell_width, dx - rect.x * grid.cell_width)
-        y = Interval(dy - rect.bottom * grid.cell_height, dy - rect.y * grid.cell_height)
-        current = self.apply(key, grid)
-        nx, ny = current.origin_x.intersect(x), current.origin_y.intersect(y)
-        if nx.empty or ny.empty:
-            # The window changed shape inside (a tab bar appeared): start over from this click.
-            nx, ny = grid.origin_x.intersect(x), grid.origin_y.intersect(y)
-            if nx.empty or ny.empty:
-                return False
-        self.data[key] = [nx.low, nx.high, ny.low, ny.high]
+        """The user clicked (dx, dy) and herdr focused the target with cell rect
+        `rect`: the origin must put that point inside the rect. Returns
+        'impossible' (no origin the window allows does that), 'learned' (first
+        calibration), 'agrees' (narrowed the stored origin), 'disagrees' (kept
+        the stored origin, remembered this as a candidate) or 'relearned' (a
+        second click agreed with the candidate, which replaced the origin)."""
+        bx = grid.origin_x.intersect(Interval(dx - rect.right * grid.cell_width, dx - rect.x * grid.cell_width))
+        by = grid.origin_y.intersect(Interval(dy - rect.bottom * grid.cell_height, dy - rect.y * grid.cell_height))
+        if bx.empty or by.empty:
+            return 'impossible'
+        origin, candidate = self.entry(key)
+        outcome, new_candidate = 'learned', None
+        if origin is not None:
+            nx, ny = origin[0].intersect(bx), origin[1].intersect(by)
+            if not nx.empty and not ny.empty:
+                bx, by, outcome = nx, ny, 'agrees'
+            elif candidate is not None and not candidate[0].intersect(bx).empty and not candidate[1].intersect(by).empty:
+                bx, by, outcome = candidate[0].intersect(bx), candidate[1].intersect(by), 'relearned'
+            else:
+                bx, by, outcome, new_candidate = origin[0], origin[1], 'disagrees', (bx, by)
+        self.data[key] = {'origin': [bx.low, bx.high, by.low, by.high],
+                          'candidate': None if new_candidate is None else
+                          [new_candidate[0].low, new_candidate[0].high, new_candidate[1].low, new_candidate[1].high]}
         self.save()
-        return True
+        return outcome
 
     def save(self):
         try:
