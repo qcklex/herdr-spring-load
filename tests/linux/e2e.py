@@ -371,7 +371,6 @@ def hidden_tab(ids):
     api('tab.focus', tab_id=ids['beta_2'])
     api('pane.focus', pane_id=ids['left'])
     sx, sy = fresh_drag_source('source-3.log')
-    warns_before = len(sensor_events('status'))
     before = snap()
     pane = model_for(client).find('pane', ids['right'])
     if not check(pane and before['focused_pane_id'] == ids['left'],
@@ -385,20 +384,20 @@ def hidden_tab(ids):
     glide(sx, sy, x1, y1)
     time.sleep(2.0)
     after = snap()
+    reason = status().get('reason') or ''
     screenshot('6-hidden-tab')
     sh('xdotool', 'mouseup', '1')
     time.sleep(0.5)
     moves = [e for e in sensor_events('drag_move') if (e.get('window') or {}).get('id') == window_id]
-    shown = [c['foreground'] for e in moves[-1:] for c in e['window'].get('clients') or []]
-    check(moves and shown == [False], 'sensor reports the kitty window with its herdr client foreground=%s' % shown)
-    warns = [e['message'] for e in sensor_events('status')[warns_before:] if e.get('level') == 'warn']
-    check(any('more tabs' in m for m in warns), 'sensor warns: %r' % (warns[:1],))
+    shown = moves[-1]['window'] if moves else {}
+    check(shown.get('sessions') == 2 and [c['pid'] for c in shown.get('clients') or []] == [client['pid']],
+          'sensor reports the kitty window with sessions=%s, peers=%s and herdr client %s' % (
+              shown.get('sessions'), len(shown.get('peers') or []), [c['pid'] for c in shown.get('clients') or []]))
     check(after['focused_pane_id'] == ids['left'],
           'hidden tab: hold on pane %s changes nothing (focused pane %s)' % (ids['right'], after['focused_pane_id']))
     log = (SUPPORT/'herdr-spring-load.log').read_text()
     check(log.count('focused ') == 3, 'core log has no focus after the first drag')
-    reason = status().get('reason') or ''
-    check('more tabs' in reason, 'core status says why: %r' % reason)
+    check('2 sessions in 1 window' in reason, 'core says why: %r' % reason)
 
 
 if __name__ == '__main__':

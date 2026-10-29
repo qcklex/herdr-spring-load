@@ -1,5 +1,3 @@
-import contextlib
-import io
 import json
 import os
 from pathlib import Path
@@ -207,31 +205,12 @@ class ProcTest(unittest.TestCase):
               exe='/usr/local/bin/herdr')
         return common.terminal_processes(owner, proc=self.tmp.name, size=lambda path: (36, 110, 990, 648))
 
-    def test_herdr_in_a_hidden_tab_is_refused(self):
-        walked = self.hidden_tab_terminal(10, 11)        # two tabs, one window: either may be visible
-        clients, refused = common.visible_clients(walked, 1)
-        self.assertEqual(refused, 'hidden_tabs')
-        self.assertEqual([(c['pid'], c['foreground']) for c in clients], [(92, False)])
-        self.assertTrue(walked[0][0]['foreground'])      # the cached walk is left as read
-        for client in clients:
-            contract.validate_client(client)
-
-    def test_one_tab_per_visible_window_is_kept(self):
-        walked = self.hidden_tab_terminal(10, 11)
-        clients, refused = common.visible_clients(walked, 2)   # two windows on screen, one tab each
-        self.assertIsNone(refused)
+    def test_a_hidden_tab_terminal_counts_its_tabs_not_herdr_panes(self):
+        clients, ttys = self.hidden_tab_terminal(10, 11)       # herdr in one tab, a shell in the other
         self.assertEqual([(c['pid'], c['foreground']) for c in clients], [(92, True)])
-        clients, refused = common.visible_clients(self.hidden_tab_terminal(12, owner=190), 1)
-        self.assertIsNone(refused)
-        self.assertTrue(clients[0]['foreground'])
-
-    def test_no_herdr_means_no_refusal(self):
-        self.proc.add(90, 'kitty', 1, argv=['kitty'])
-        self.proc.add(91, 'sh', 90, tty_nr=PTS(10), argv=['sh'])
-        self.proc.add(93, 'sh', 90, tty_nr=PTS(11), argv=['sh'])
-        walked = common.terminal_processes(90, proc=self.tmp.name)
-        self.assertEqual(common.visible_clients(walked, 1), ([], None))
-        self.assertEqual(common.visible_clients(None, 1), (None, None))
+        self.assertEqual(ttys, {PTS(10), PTS(11)})
+        clients, ttys = self.hidden_tab_terminal(12, owner=190)
+        self.assertEqual((len(clients), len(ttys)), (1, 1))
 
     def test_client_cache_refreshes_on_window_change_and_after_a_second(self):
         calls, clock = [], [0.0]
@@ -309,24 +288,16 @@ class HyprlandTest(unittest.TestCase):
         self.assertEqual(window['id'], '0xa')
         self.assertEqual(window['peers'], [{'x': 960, 'y': 0, 'width': 960, 'height': 1080}])
 
-    def test_hidden_tab_rule_counts_the_window_and_its_peers(self):
+    def test_window_reports_sessions_for_the_core_hidden_tab_rule(self):
         herdr = {'pid': 5, 'argv': ['herdr'], 'tty': '/dev/pts/1', 'rows': 36, 'cols': 110, 'xpixel': 990,
                  'ypixel': 648, 'foreground': True, 'started': 1.0, 'env': {}}
-        tabs = {1, 2}
-        self.backend.cache = common.ClientCache(lookup=lambda pid: ([herdr], tabs))
-        out = io.StringIO()
-        with contextlib.redirect_stdout(out):
-            window = self.backend.describe(100, 900)                # 0xa and its peer 0xb: two windows
-            self.assertTrue(window['clients'][0]['foreground'])
-            tabs.add(3)
-            self.backend.cache.reset()
-            for _ in range(2):
-                window = self.backend.describe(100, 900)            # three tabs, two windows
-            self.assertFalse(window['clients'][0]['foreground'])
-        warnings = [json.loads(line) for line in out.getvalue().splitlines()]
-        self.assertEqual([(w['type'], w['level']) for w in warnings], [('status', 'warn')])   # once per window
-        self.assertIn('Run herdr alone in its window', warnings[0]['message'])
-        contract.validate_window(window)
+        self.backend.cache = common.ClientCache(lookup=lambda pid: ([herdr], {1, 2, 3}))
+        window = self.backend.describe(100, 900)                # 0xa and its peer 0xb
+        self.assertEqual((window['sessions'], len(window['peers']), window['clients']), (3, 1, [herdr]))
+        self.assertEqual(contract.validate_window(window)['sessions'], 3)
+        self.backend.cache = common.ClientCache(lookup=lambda pid: None)
+        window = self.backend.describe(100, 900)
+        self.assertEqual((window['sessions'], window['clients']), (None, None))
 
     def test_socket_path_prefers_xdg_runtime_dir(self):
         with tempfile.TemporaryDirectory() as runtime:
