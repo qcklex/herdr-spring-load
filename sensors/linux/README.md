@@ -19,6 +19,7 @@ This sensor implements the sensor contract in `docs/SENSOR.md`. It is Python 3 s
 | window | The topmost mapped, non-override-redirect child of the root at the pointer, so drag icons, menus and tooltips are skipped. Then the `WM_STATE` client window inside it, its `_NET_WM_PID`, `WM_CLASS` and root-relative geometry. |
 | peers | `_NET_CLIENT_LIST`, keeping only windows with the same `_NET_WM_PID` that are viewable, not hidden and on the current desktop |
 | clients | `/proc/*/stat` below the window's pid. Every `herdr` with a controlling tty, with `TIOCGWINSZ` read through a read-only open of its `/dev/pts/N`, and `foreground` from `pgrp == tpgid` |
+| sessions | the distinct controlling ttys of the first process with one on each branch below the window's pid: one per tab or split the terminal hosts (herdr's own pane ttys sit below a herdr client and are not counted). The core refuses when this exceeds the window plus its `peers`, because a hidden tab keeps the window's size and fitting cannot tell it from the visible one (review N10). This covers single-process terminals with tabs or splits: gnome-terminal, konsole, xfce4-terminal, kitty, wezterm, foot --server |
 
 `bounds` is the client window, without the window manager's decorations. The decorated frame is the extra field `frame`.
 

@@ -13,6 +13,10 @@ with the linux-x11 sensor, and a GTK file drag driven through XTest.
    the herdr API; the drop is checked passively by reading that pane.
 4. Two clients: a second alacritty attaches to the same session; the same
    hover must change nothing.
+5. Hidden tab (review N10): both alacritty windows close; kitty, one process
+   with its tab bar hidden, runs herdr in a background tab and a shell in the
+   visible one. herdr's tty keeps the window's size, so only the sensor's
+   hidden-tab rule can refuse it: the same hover must change nothing.
 
 The core's renderer is used only to know where to point; every assertion
 reads herdr's own state."""
@@ -90,10 +94,10 @@ def geometry(window_id):
             'width': int(info['Width']), 'height': int(info['Height'])}
 
 
-def herdr_windows():
-    """{window id: (pid, bounds)} of the alacritty windows."""
+def herdr_windows(cls='Alacritty'):
+    """{window id: (pid, bounds)} of the terminal windows of class `cls`."""
     found = {}
-    for line in sh('xdotool', 'search', '--class', 'Alacritty').split():
+    for line in sh('xdotool', 'search', '--class', cls).split():
         bounds = geometry(line)
         pid = sh('xdotool', 'getwindowpid', line).strip()
         if bounds['width'] > 50 and pid:
@@ -151,6 +155,24 @@ def sensor_starts():
         return sum('"drag_start"' in line for line in (OUT/'sensor.ndjson').read_text().splitlines())
     except OSError:
         return 0
+
+
+def sensor_events(kind):
+    try:
+        lines = (OUT/'sensor.ndjson').read_text().splitlines()
+    except OSError:
+        return []
+    return [e for e in map(json.loads, lines) if e.get('type') == kind]
+
+
+def fresh_drag_source(log):
+    """A new drag source window's centre. GTK did not start a second drag from the first one here."""
+    sh('pkill', '-f', 'drag_source.py')
+    spawn(['python3', str(REPO/'tests/linux/drag_source.py'), DROP_FILE], log)
+    wait(lambda: sh('xdotool', 'search', '--name', 'drag-source').split(), 10)
+    time.sleep(1)
+    box = geometry(sh('xdotool', 'search', '--name', 'drag-source').split()[0])
+    return box['x'] + box['width'] // 2, box['y'] + box['height'] // 2
 
 
 def status():
@@ -296,14 +318,7 @@ def main():
         return
     time.sleep(2)
     api('workspace.focus', workspace_id=ids['alpha'])
-    # A fresh drag source: GTK did not start a second drag from the first one here.
-    sh('pkill', '-f', 'drag_source.py')
-    spawn(['python3', str(REPO/'tests/linux/drag_source.py'), DROP_FILE], 'source-2.log')
-    wait(lambda: sh('xdotool', 'search', '--name', 'drag-source').split(), 10)
-    time.sleep(1)
-    source = sh('xdotool', 'search', '--name', 'drag-source').split()[0]
-    box = geometry(source)
-    sx, sy = box['x'] + box['width'] // 2, box['y'] + box['height'] // 2
+    sx, sy = fresh_drag_source('source-2.log')
     starts_before = sensor_starts()
     before = snap()
     sh('xdotool', 'mousemove', str(sx), str(sy))
@@ -322,6 +337,67 @@ def main():
     check(after['focused_workspace_id'] == before['focused_workspace_id'] == ids['alpha'],
           'two clients: hold on space beta changes nothing (workspace %s)' % after['focused_workspace_id'])
     check('2 herdr clients' in reason, 'core says why: %r' % reason)
+    hidden_tab(ids)
+
+
+def hidden_tab(ids):
+    """5. herdr in a hidden tab of a single-process terminal: nothing may change."""
+    sh('pkill', '-x', 'alacritty')
+    if not check(wait(lambda: not local_clients() and snap(), 10), 'both alacritty clients are gone, herdr server still up'):
+        return
+    session = OUT/'kitty-session.conf'
+    session.write_text('new_tab herdr\nlaunch herdr\nnew_tab shell\nlaunch sh\n')   # the last tab is the visible one
+    spawn(['kitty', '-o', 'tab_bar_style=hidden', '-o', 'window_padding_width=0', '-o', 'remember_window_size=no',
+           '-o', 'initial_window_width=990', '-o', 'initial_window_height=648', '-o', 'placement_strategy=top-left',
+           '--session', str(session)], 'kitty.log')
+    if not check(wait(lambda: len(local_clients()) == 1 and herdr_windows('kitty'), 20),
+                 'kitty runs herdr in a hidden tab: %s local client(s)' % len(local_clients())):
+        return
+    time.sleep(2)
+    window_id, window = next(iter(herdr_windows('kitty').items()))
+    sys.path.insert(0, str(REPO/'sensors/linux'))
+    import common
+    found, tabs = common.terminal_processes(window[0])
+    client = found[0] if found else None
+    check(client and len(tabs) == 2 and client['xpixel'] > 0,
+          'kitty pid %s hosts %d tabs; herdr %s on %s: %sx%s cells, %sx%s px, window %s' % (
+              window[0], len(tabs), client and client['pid'], client and client['tty'], client and client['cols'],
+              client and client['rows'], client and client['xpixel'], client and client['ypixel'], window[1]))
+    from spring_load import geometry as core_geometry
+    fits = core_geometry.fit((window[1]['width'], window[1]['height']), client, 1.0)
+    check(fits, "without the rule the core would bind it: the hidden tab's tty fits the window (%s)" % (fits,))
+    # A pane target: panes need no calibration, so nothing but the hidden-tab rule stands in the way.
+    api('workspace.focus', workspace_id=ids['beta'])
+    api('tab.focus', tab_id=ids['beta_2'])
+    api('pane.focus', pane_id=ids['left'])
+    sx, sy = fresh_drag_source('source-3.log')
+    before = snap()
+    pane = model_for(client).find('pane', ids['right'])
+    if not check(pane and before['focused_pane_id'] == ids['left'],
+                 'renderer places the unfocused pane %s in the hidden tab (focused: %s)' % (ids['right'],
+                                                                                           before['focused_pane_id'])):
+        return
+    sh('xdotool', 'mousemove', str(sx), str(sy))
+    time.sleep(0.3)
+    sh('xdotool', 'mousedown', '1')
+    x1, y1 = point(window, client, pane.rect)
+    glide(sx, sy, x1, y1)
+    time.sleep(2.0)
+    after = snap()
+    reason = status().get('reason') or ''
+    screenshot('6-hidden-tab')
+    sh('xdotool', 'mouseup', '1')
+    time.sleep(0.5)
+    moves = [e for e in sensor_events('drag_move') if (e.get('window') or {}).get('id') == window_id]
+    shown = moves[-1]['window'] if moves else {}
+    check(shown.get('sessions') == 2 and [c['pid'] for c in shown.get('clients') or []] == [client['pid']],
+          'sensor reports the kitty window with sessions=%s, peers=%s and herdr client %s' % (
+              shown.get('sessions'), len(shown.get('peers') or []), [c['pid'] for c in shown.get('clients') or []]))
+    check(after['focused_pane_id'] == ids['left'],
+          'hidden tab: hold on pane %s changes nothing (focused pane %s)' % (ids['right'], after['focused_pane_id']))
+    log = (SUPPORT/'herdr-spring-load.log').read_text()
+    check(log.count('focused ') == 3, 'core log has no focus after the first drag')
+    check('2 sessions in 1 window' in reason, 'core says why: %r' % reason)
 
 
 if __name__ == '__main__':
