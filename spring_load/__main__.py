@@ -92,7 +92,8 @@ def status(args):
     for kind, why in (data.get('refused') or {}).items():
         print(f'  {kind} targets off: {why}')
     print(f'  calibrated window shapes: {data.get("calibrated", 0)}'
-          + ('' if data.get('calibrated') else ' (click a herdr tab or Space once to enable tab and Space spring-loading)'))
+          + ('' if data.get('calibrated') else ' (to turn on tabs and Spaces, click a different herdr tab once, or a different Space twice,'
+             ' without dragging anything)'))
     action = data.get('last_action')
     if action:
         print(f'  last navigation: {action["kind"]} {action["id"]} at {time.strftime("%H:%M:%S", time.localtime(action["time"]))}')
