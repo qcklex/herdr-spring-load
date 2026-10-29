@@ -104,7 +104,7 @@ func processTable() -> [Proc]? {
 }
 
 /// argv and the allowed environment keys from KERN_PROCARGS2 (same-user processes only).
-func arguments(_ pid: Int32) -> (argv: [String], env: [String: String]?) {
+func arguments(_ pid: Int32, keys: Set<String> = envKeys) -> (argv: [String], env: [String: String]?) {
     var mib: [Int32] = [CTL_KERN, KERN_ARGMAX]
     var argmax: Int32 = 0
     var size = MemoryLayout<Int32>.size
@@ -132,7 +132,7 @@ func arguments(_ pid: Int32) -> (argv: [String], env: [String: String]?) {
     for entry in strings[count...] {
         guard let eq = entry.firstIndex(of: "=") else { continue }
         let key = String(entry[..<eq])
-        if envKeys.contains(key) { env[key] = String(entry[entry.index(after: eq)...]) }
+        if keys.contains(key) { env[key] = String(entry[entry.index(after: eq)...]) }
     }
     return (Array(strings[..<count]), env)
 }
@@ -140,8 +140,7 @@ func arguments(_ pid: Int32) -> (argv: [String], env: [String: String]?) {
 let tiocgwinsz: UInt = 0x40087468  // _IOR('t', 104, struct winsize)
 
 func client(_ proc: Proc) -> [String: Any]? {
-    guard proc.tdev != -1, let name = devname(proc.tdev, S_IFCHR) else { return nil }
-    let tty = "/dev/" + String(cString: name)
+    guard let tty = ttyPath(proc) else { return nil }
     let (argv, env) = arguments(proc.pid)
     var entry: [String: Any] = ["pid": Int(proc.pid), "argv": argv, "tty": tty, "rows": NSNull(), "cols": NSNull(),
                                 "xpixel": 0, "ypixel": 0, "foreground": proc.tpgid > 0 && proc.tpgid == proc.pgid, "started": proc.started,
@@ -162,20 +161,127 @@ func client(_ proc: Proc) -> [String: Any]? {
 
 func isHerdr(_ proc: Proc) -> Bool { proc.comm == "herdr" }
 
-/// herdr clients with a tty at any depth below `root`; nil when the table can't be read.
-func clientsBelow(_ root: Int32, in table: [Proc]?) -> [[String: Any]]? {
-    guard let table = table else { return nil }
+func ttyPath(_ proc: Proc) -> String? {
+    guard proc.tdev != -1, let name = devname(proc.tdev, S_IFCHR) else { return nil }
+    return "/dev/" + String(cString: name)
+}
+
+func descendants(of root: Int32, in table: [Proc]) -> [Proc] {
     var children: [Int32: [Proc]] = [:]
     for proc in table { children[proc.ppid, default: []].append(proc) }
-    var found: [[String: Any]] = []
+    var found: [Proc] = []
     var stack = children[root] ?? []
     var seen = Set<Int32>()
     while let proc = stack.popLast() {
         guard proc.pid > 0, seen.insert(proc.pid).inserted else { continue }
-        if isHerdr(proc), let entry = client(proc) { found.append(entry) }
+        found.append(proc)
         stack.append(contentsOf: children[proc.pid] ?? [])
     }
     return found
+}
+
+/// herdr clients with a tty at any depth below `root`; nil when the table can't be read.
+func clientsBelow(_ root: Int32, in table: [Proc]?) -> [[String: Any]]? {
+    guard let table = table else { return nil }
+    return descendants(of: root, in: table).filter(isHerdr).compactMap(client)
+}
+
+func executablePath(_ pid: Int32) -> String? {
+    var buffer = [CChar](repeating: 0, count: 4096)
+    guard proc_pidpath(pid, &buffer, UInt32(buffer.count)) > 0 else { return nil }
+    return String(cString: buffer)
+}
+
+/// Runs a read-only query with a 1 s limit; stdout, or nil.
+func query(_ executable: String, _ args: [String]) -> String? {
+    let process = Process()
+    process.executableURL = URL(fileURLWithPath: executable)
+    process.arguments = args
+    let out = Pipe()
+    process.standardOutput = out
+    process.standardError = FileHandle.nullDevice
+    process.standardInput = FileHandle.nullDevice
+    do { try process.run() } catch { return nil }
+    let deadline = Date().addingTimeInterval(1)
+    while process.isRunning && Date() < deadline { usleep(10_000) }
+    if process.isRunning { process.terminate(); return nil }
+    let data = out.fileHandleForReading.readDataToEndOfFile()
+    return process.terminationStatus == 0 ? String(decoding: data, as: UTF8.self) : nil
+}
+
+/// The pane ttys that the tmux clients in this window show. A tmux client runs
+/// in the window (below its owner); its server is a daemon, so herdr in a tmux
+/// pane is not below the window. The client's own server says which pane it
+/// shows (`list-clients`, read-only).
+func tmuxPaneTTYs(below root: Int32, in table: [Proc]) -> Set<String> {
+    var panes = Set<String>()
+    for proc in descendants(of: root, in: table) where proc.comm == "tmux" {
+        guard let clientTTY = ttyPath(proc), let tmux = executablePath(proc.pid) else { continue }
+        let (argv, env) = arguments(proc.pid, keys: ["TMUX_TMPDIR"])
+        var socket: String? = nil
+        var name = "default"
+        var i = 1
+        while i < argv.count {
+            if argv[i] == "-S", i + 1 < argv.count { socket = argv[i + 1]; i += 2; continue }
+            if argv[i] == "-L", i + 1 < argv.count { name = argv[i + 1]; i += 2; continue }
+            if !argv[i].hasPrefix("-") { break }
+            i += 1
+        }
+        let path = socket ?? ((env?["TMUX_TMPDIR"] ?? "/tmp") + "/tmux-\(getuid())/" + name)
+        guard let out = query(tmux, ["-S", path, "list-clients", "-F", "#{client_tty}\t#{pane_tty}"]) else { continue }
+        for line in out.split(separator: "\n") {
+            let fields = line.split(separator: "\t", omittingEmptySubsequences: false).map(String.init)
+            if fields.count == 2 && fields[0] == clientTTY { panes.insert(fields[1]) }
+        }
+    }
+    return panes
+}
+
+typealias ResponsibleFunction = @convention(c) (pid_t) -> pid_t
+/// macOS's "responsible process" (the app a helper or session server acts for),
+/// looked up at run time; nil where the system does not provide it.
+let responsibleFor: ResponsibleFunction? = {
+    guard let symbol = dlsym(UnsafeMutableRawPointer(bitPattern: -2), "responsibility_get_pid_responsible_for_pid")
+    else { return nil }
+    return unsafeBitCast(symbol, to: ResponsibleFunction.self)
+}()
+
+/// herdr clients shown in a window owned by `owner`. First the clients below
+/// the owner process. When there are none, two fallbacks, each marked with
+/// "via" (the core treats them alike; the fit, peer and one-client rules still
+/// decide):
+///   - "tmux": herdr in the tmux pane that a tmux client in this window shows;
+///   - "responsible": herdr whose responsible app is the window's app (session
+///     servers such as iTerm2's, re-parented to launchd), unless it runs inside
+///     a tmux or screen server, which a window cannot be tied to that way.
+/// Anything else (screen, unknown servers) stays unlisted: the window is inert.
+func clientsFor(owner: Int32, in table: [Proc]?) -> [[String: Any]]? {
+    guard let table = table else { return nil }
+    let direct = descendants(of: owner, in: table).filter(isHerdr).compactMap(client)
+    if !direct.isEmpty { return direct }
+    let uid = getuid()
+    let herdrs = table.filter { $0.uid == uid && isHerdr($0) }
+    let panes = tmuxPaneTTYs(below: owner, in: table)
+    if !panes.isEmpty {
+        let found = herdrs.filter { ttyPath($0).map(panes.contains) ?? false }.compactMap(client)
+            .map { entry -> [String: Any] in var e = entry; e["via"] = "tmux"; return e }
+        if !found.isEmpty { return found }
+    }
+    guard let responsible = responsibleFor, responsible(owner) == owner else { return [] }
+    var byPid: [Int32: Proc] = [:]
+    for proc in table { byPid[proc.pid] = proc }
+    func underMultiplexer(_ proc: Proc) -> Bool {
+        var current = byPid[proc.ppid]
+        var hops = 0
+        while let p = current, p.pid > 1, hops < 64 {
+            if p.comm == "tmux" || p.comm == "screen" || p.comm.hasPrefix("tmux:") { return true }
+            current = byPid[p.ppid]
+            hops += 1
+        }
+        return false
+    }
+    return herdrs.filter { responsible($0.pid) == owner && !underMultiplexer($0) }.compactMap(client)
+        .map { entry -> [String: Any] in var e = entry; e["via"] = "responsible"; return e }
 }
 
 func allClients(in table: [Proc]?) -> [[String: Any]]? {
@@ -228,7 +334,7 @@ final class ClientCache {
     func clients(for window: WindowInfo, force: Bool) -> [[String: Any]]? {
         let t = now()
         if force || window.id != windowId || t - stamp >= clientRefresh {
-            value = clientsBelow(window.pid, in: processTable())
+            value = clientsFor(owner: window.pid, in: processTable())
             windowId = window.id
             stamp = t
         }
@@ -416,6 +522,11 @@ if let i = args.firstIndex(of: "--clients-below"), i + 1 < args.count, let pid =
 if let i = args.firstIndex(of: "--window-at"), i + 2 < args.count, let x = Double(args[i + 1]), let y = Double(args[i + 2]) {
     emit(["type": "status", "level": "info", "message": "window-at",
           "window": window(at: CGPoint(x: x, y: y), forceClients: true).0 ?? NSNull()])
+    exit(0)
+}
+if let i = args.firstIndex(of: "--clients-for"), i + 1 < args.count, let pid = Int32(args[i + 1]) {
+    emit(["type": "status", "level": "info", "message": "clients-for",
+          "clients": clientsFor(owner: pid, in: processTable()).map { $0 as Any } ?? NSNull()])
     exit(0)
 }
 if args.contains("--all-clients") {

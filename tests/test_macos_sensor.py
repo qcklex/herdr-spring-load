@@ -124,6 +124,66 @@ class MacSensorTest(unittest.TestCase):
                 self.assertTrue(b['x'] <= x <= b['x'] + b['width'] and b['y'] <= y <= b['y'] + b['height'])
         self.assertIsNone(json.loads(self.run_sensor('--window-at', '-100000', '-100000').stdout)['window'])
 
+    def fake_herdr(self):
+        fake = self.tmp/'herdr'
+        if not fake.exists():
+            source = self.tmp/'herdr.c'
+            source.write_text('#include <unistd.h>\nint main(void) { pause(); return 0; }\n')
+            subprocess.run(['cc', '-o', str(fake), str(source)], check=True, capture_output=True)
+        return fake
+
+    @unittest.skipUnless(shutil.which('tmux'), 'needs tmux')
+    def test_herdr_inside_tmux_is_found_through_the_tmux_client(self):
+        # Review N2: the tmux server is a daemon, so herdr in its pane is not below the
+        # window; the tmux client in the window says which pane it shows.
+        import fcntl, struct, termios
+        fake = self.fake_herdr()
+        sock = self.tmp/'tmux.sock'
+        env = {'HOME': str(self.tmp), 'PATH': '/usr/bin:/bin', 'TERM': 'xterm-256color', 'LANG': 'en_US.UTF-8',
+               'HERDR_SESSION': 'inside-tmux'}
+        pid, fd = pty.fork()
+        if pid == 0:
+            fcntl.ioctl(0, termios.TIOCSWINSZ, struct.pack('HHHH', 40, 120, 960, 800))
+            os.execve(shutil.which('tmux'), ['tmux', '-S', str(sock), '-f', '/dev/null', 'new-session', str(fake)], env)
+        tmux = shutil.which('tmux')
+        try:
+            def drain():
+                import select
+                while True:
+                    try:
+                        if select.select([fd], [], [], 0.2)[0] and not os.read(fd, 65536):
+                            return
+                    except OSError:
+                        return
+            import threading
+            threading.Thread(target=drain, daemon=True).start()
+            deadline = time.monotonic() + 10
+            clients = []
+            while time.monotonic() < deadline and not clients:
+                clients = json.loads(self.run_sensor('--clients-for', str(os.getpid())).stdout)['clients']
+                time.sleep(0.1)
+            self.assertEqual(len(clients), 1, clients)
+            client = contract.validate_client(clients[0])
+            self.assertEqual(clients[0]['via'], 'tmux')
+            self.assertEqual(client['argv'], [str(fake)])
+            self.assertEqual(client['env'].get('HERDR_SESSION'), 'inside-tmux')
+            self.assertEqual(json.loads(self.run_sensor('--clients-below', str(os.getpid())).stdout)['clients'], [],
+                             'not a descendant: only the tmux mapping finds it')
+        finally:
+            subprocess.run([tmux, '-S', str(sock), 'kill-server'], capture_output=True, timeout=10)
+            try:
+                os.kill(pid, 9)
+            except ProcessLookupError:
+                pass
+            os.close(fd)
+            os.waitpid(pid, 0)
+
+    def test_fallbacks_list_nothing_for_an_owner_that_is_not_an_app(self):
+        # Review N2, fail-safe: this test process is not responsible for itself (its
+        # terminal is), so no herdr client elsewhere on the machine is attributed to it.
+        clients = json.loads(self.run_sensor('--clients-for', str(os.getpid())).stdout)['clients']
+        self.assertEqual(clients, [])
+
     def replay(self, samples):
         result = self.run_sensor('--simulate', input='\n'.join(json.dumps(s) for s in samples) + '\n')
         self.assertEqual(result.returncode, 0, result.stderr)

@@ -87,7 +87,24 @@ that cannot be described) or:
 | `bounds` | rect | outer frame of the window in the sensor's space, titlebar included when the OS reports it that way |
 | `scale` | number or null | backing pixels per coordinate unit for this window's display (2.0 on Retina, 1.0 on X11, null if unknown) |
 | `peers` | rect array | bounds of the owner's **other** on-screen top-level windows (same `pid`, normal layer, visible, not minimised). The core uses this for the "two same-size windows" ambiguity rule. `[]` when there are none. |
-| `clients` | client array | herdr client processes that descend from `pid`, from section 2.1 |
+| `clients` | client array | herdr client processes shown in this window, from section 2.1: those that descend from `pid`; when there are none, those the sensor can tie to the window otherwise (see below) |
+
+**Clients that do not descend from the window owner.** Some terminals host
+their sessions in a separate server (iTerm2's session server, WezTerm's mux),
+and herdr may run inside tmux or screen, whose servers are daemons. A sensor
+may then list clients it can tie to the window in a way that cannot pick a
+client of another window, and marks each with an extra `"via"` string. The
+macOS sensor does two things, only when nothing descends from the owner:
+
+- `"tmux"`: a tmux client runs below the owner; its own tmux server's
+  `list-clients` (read-only) names the pane tty it shows, and a herdr client
+  on that tty is listed.
+- `"responsible"`: herdr clients whose macOS responsible process is the window
+  owner (an app), except those inside a tmux or screen server.
+
+Anything ambiguous (screen, other servers, several candidates) stays
+unlisted or is refused by the core's fit, same-size-peer and one-client rules,
+so the window stays inert.
 
 The core must treat the window found by the sensor as the topmost normal
 window under the pointer. The sensor skips desktop, menu-bar, dock, overlay,
