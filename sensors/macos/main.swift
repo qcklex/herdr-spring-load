@@ -74,6 +74,7 @@ struct Proc {
     let tdev: dev_t
     let pgid: pid_t
     let tpgid: pid_t
+    let started: Double
 }
 
 func processTable() -> [Proc]? {
@@ -92,7 +93,9 @@ func processTable() -> [Proc]? {
                 }
                 return Proc(pid: info.kp_proc.p_pid, ppid: info.kp_eproc.e_ppid, uid: info.kp_eproc.e_ucred.cr_uid,
                             comm: comm, tdev: info.kp_eproc.e_tdev, pgid: info.kp_eproc.e_pgid,
-                            tpgid: info.kp_eproc.e_tpgid)
+                            tpgid: info.kp_eproc.e_tpgid,
+                            started: Double(info.kp_proc.p_un.__p_starttime.tv_sec)
+                                + Double(info.kp_proc.p_un.__p_starttime.tv_usec) / 1e6)
             }
         }
         if errno != ENOMEM { return nil }
@@ -141,7 +144,7 @@ func client(_ proc: Proc) -> [String: Any]? {
     let tty = "/dev/" + String(cString: name)
     let (argv, env) = arguments(proc.pid)
     var entry: [String: Any] = ["pid": Int(proc.pid), "argv": argv, "tty": tty, "rows": NSNull(), "cols": NSNull(),
-                                "xpixel": 0, "ypixel": 0, "foreground": proc.tpgid > 0 && proc.tpgid == proc.pgid,
+                                "xpixel": 0, "ypixel": 0, "foreground": proc.tpgid > 0 && proc.tpgid == proc.pgid, "started": proc.started,
                                 "env": env.map { $0 as Any } ?? NSNull()]
     let fd = open(tty, O_RDONLY | O_NOCTTY | O_NONBLOCK)
     if fd >= 0 {

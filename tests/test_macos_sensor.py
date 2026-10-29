@@ -103,6 +103,7 @@ class MacSensorTest(unittest.TestCase):
             self.assertEqual((client['rows'], client['cols'], client['xpixel'], client['ypixel']), (40, 120, 960, 640))
             self.assertEqual(client['tty'], os.ttyname(slave))
             self.assertIs(client['foreground'], True)
+            self.assertLess(abs(client['started'] - time.time()), 30, 'process start time in epoch seconds')
             self.assertEqual(client['env'], {'HOME': str(self.tmp), 'HERDR_SESSION': 'work'}, 'only the listed keys')
             everyone = json.loads(self.run_sensor('--all-clients').stdout)['clients']
             self.assertIn(child.pid, [c['pid'] for c in everyone])
