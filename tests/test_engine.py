@@ -453,6 +453,18 @@ class EngineTest(unittest.TestCase):
         self.assertEqual([l.split('calibration ')[1] for l in lines if 'calibration ' in l], ['candidate', 'learned'])
         self.assertEqual(engine.status['calibrated'], 1)
 
+    def test_identity_baseline_is_taken_when_subscribing(self):
+        # Review M2 residual: a cd between helper start and the first drag is a change.
+        engine = core.Engine(ScriptedSensor([]), self.temp/'support', env=self.env)
+        sock = self.config/'herdr.sock'
+        engine.ensure_subscription(sock)
+        self.addCleanup(lambda: [sub.close() for sub in engine.subscriptions.values()])
+        workspace = self.server.snapshot['workspaces'][0]['workspace_id']
+        cwd = render.identity_cwd(self.server.snapshot, workspace)
+        self.assertIsNotNone(cwd)
+        self.assertTrue(engine.branch_settled(sock, workspace, cwd))
+        self.assertFalse(engine.branch_settled(sock, workspace, cwd + '/elsewhere'))
+
     def test_unknown_herdr_version_is_inert(self):
         self.server.snapshot['version'] = '0.10.0'
         engine = self.run_engine(self.drag(0.5, [(self.pane_point(self.other_pane()), 0.8)]))

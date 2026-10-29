@@ -449,6 +449,12 @@ class Engine:
         except (OSError, ValueError, herdr_api.ApiError) as error:
             self.log(f'no focus events from {api_socket}: {error}')
             return
+        # Baseline of every workspace's identity cwd, so a cd before the first drag
+        # counts as a change (review M2).
+        for workspace in snapshot.get('workspaces', []):
+            cwd = render.identity_cwd(snapshot, workspace.get('workspace_id'))
+            if cwd is not None:
+                self.identities.setdefault((api_socket, workspace['workspace_id']), (cwd, -1e18))
         # Queued after any event that came first, so the main thread applies it in order.
         self.events.put((self.clock(), api_socket, {'seed': {k: snapshot.get(v) for k, v in SNAPSHOT_ID.items()}}))
 
