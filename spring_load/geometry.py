@@ -108,6 +108,10 @@ class Calibration:
             return None, None
         return _interval_pair(value.get('origin')), _interval_pair(value.get('candidate'))
 
+    def calibrated(self):
+        """How many window shapes have a confirmed origin."""
+        return sum(1 for key in self.data if self.entry(key)[0] is not None)
+
     def apply(self, key, grid):
         origin, _ = self.entry(key)
         if origin is None:
@@ -116,20 +120,30 @@ class Calibration:
         y = grid.origin_y.intersect(origin[1])
         return grid if x.empty or y.empty else grid.narrowed(x, y)
 
-    def learn(self, key, grid, dx, dy, rect):
+    def learn(self, key, grid, dx, dy, rect, provisional=False):
         """The user clicked (dx, dy) and herdr focused the target with cell rect
         `rect`: the origin must put that point inside the rect. Returns
         'impossible' (no origin the window allows does that), 'learned' (first
         calibration), 'agrees' (narrowed the stored origin), 'disagrees' (kept
         the stored origin, remembered this as a candidate) or 'relearned' (a
-        second click agreed with the candidate, which replaced the origin)."""
+        second click agreed with the candidate, which replaced the origin).
+        With `provisional` (the click could also have meant another target),
+        a first calibration is kept as a candidate ('candidate') until a
+        second click agrees with it."""
         bx = grid.origin_x.intersect(Interval(dx - rect.right * grid.cell_width, dx - rect.x * grid.cell_width))
         by = grid.origin_y.intersect(Interval(dy - rect.bottom * grid.cell_height, dy - rect.y * grid.cell_height))
         if bx.empty or by.empty:
             return 'impossible'
         origin, candidate = self.entry(key)
         outcome, new_candidate = 'learned', None
-        if origin is not None:
+        if origin is None and candidate is not None and not candidate[0].intersect(bx).empty \
+                and not candidate[1].intersect(by).empty:
+            bx, by = candidate[0].intersect(bx), candidate[1].intersect(by)
+        elif origin is None and provisional:
+            self.data[key] = {'origin': None, 'candidate': [bx.low, bx.high, by.low, by.high]}
+            self.save()
+            return 'candidate'
+        elif origin is not None:
             nx, ny = origin[0].intersect(bx), origin[1].intersect(by)
             if not nx.empty and not ny.empty:
                 bx, by, outcome = nx, ny, 'agrees'

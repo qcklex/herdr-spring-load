@@ -23,6 +23,11 @@ class GeometryTest(unittest.TestCase):
             self.assertEqual(calibration.learn('k', grid, 5, 52, tab), 'relearned')    # a second click agrees
             self.assertEqual((calibration.apply('k', grid).origin_y.low, calibration.apply('k', grid).origin_y.high), (45, 52))
             self.assertEqual(calibration.learn('k', grid, 5, 200, tab), 'impossible')
+            self.assertEqual(calibration.learn('p', grid, 5, 32, tab, provisional=True), 'candidate')   # review N1
+            self.assertEqual(calibration.apply('p', grid).origin_y, grid.origin_y, 'a candidate is not used')
+            self.assertEqual(calibration.learn('p', grid, 5, 25, tab, provisional=True), 'learned')
+            self.assertEqual((calibration.apply('p', grid).origin_y.low, calibration.apply('p', grid).origin_y.high), (22, 25))
+            self.assertEqual(calibration.calibrated(), 2)
             legacy = geometry.Calibration(Path(temp)/'old.json')
             legacy.data = {'k': [0, 1, 22, 25]}
             self.assertEqual(legacy.apply('k', grid).origin_y.high, 25, 'the first 0.3.0 format still loads')

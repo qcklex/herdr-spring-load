@@ -186,10 +186,10 @@ class EngineTest(unittest.TestCase):
         steps.append((t + 0.05, {'type': 'drag_end', 'x': 0, 'y': 0, 'reason': 'released'}))
         return steps
 
-    def run_engine(self, steps, uninstall=None):
+    def run_engine(self, steps, uninstall=None, log=None):
         sensor = ScriptedSensor(steps)
         engine = core.Engine(sensor, self.temp/'support', env=self.env, clock=sensor.clock,
-                             list_processes=lambda: None, uninstall=uninstall)
+                             list_processes=lambda: None, uninstall=uninstall, log=log)
         engine.run(until=sensor.done)
         return engine
 
@@ -277,16 +277,22 @@ class EngineTest(unittest.TestCase):
         # Two ordinary clicks on the "assets" row (top and bottom of the row) calibrate the titlebar.
         x0 = self.window_xy[0] + 5 * CELL_W
         top = self.window_xy[1] + TITLEBAR + row_of(assets) * CELL_H + 2
-        # Each click moves away from "assets" first (by keyboard, say), then clicks it again.
+        # Each click on "assets" follows a move away from it (by keyboard, say) well before.
         project_ws = project['workspace_id']
         steps = [(0.1, lambda: self.server.user_focus('workspace.focus', workspace_id=project_ws)),
-                 (0.25, lambda: self.server.user_focus('workspace.focus', workspace_id=assets['workspace_id'])),
-                 (0.3, {'type': 'click', 'x': x0, 'y': top, 'window': self.window()}),
-                 (1.5, lambda: self.server.user_focus('workspace.focus', workspace_id=project_ws)),
+                 (0.75, lambda: self.server.user_focus('workspace.focus', workspace_id=assets['workspace_id'])),
+                 (0.8, {'type': 'click', 'x': x0, 'y': top, 'window': self.window()}),
+                 (1.6, lambda: self.server.user_focus('workspace.focus', workspace_id=project_ws)),
                  (2.2, {'type': 'click', 'x': x0, 'y': top + CELL_H - 4, 'window': self.window()}),
                  (2.25, lambda: self.server.user_focus('workspace.focus', workspace_id=assets['workspace_id']))]
-        self.run_engine(steps)
+        lines = []
+        self.run_engine(steps, log=lines.append)
         self.server.calls.clear()
+        outcomes = [l.split('calibration ')[1] for l in lines if 'calibration ' in l]
+        # Review N1: each click is attributed to the Space actually clicked. "assets" is the
+        # last row, so no other Space lies in the first click's uncertainty: it counts at once.
+        self.assertEqual(outcomes, ['learned', 'agrees'])
+        self.assertTrue(all(f"space {assets['workspace_id']}" in l for l in lines if 'calibration ' in l))
         low, high = list(json.loads((self.temp/'support/calibration.json').read_text()).values())[0]['origin'][2:]
         self.assertLessEqual(high - low, 3)
         # Pointer path: the "project" row, then the "files" tab, then the pane that is not focused there.
@@ -331,6 +337,9 @@ class EngineTest(unittest.TestCase):
         self.assertEqual(engine.attribute({'at': 9.1, 'socket': 's'}), ('pane', 'p3'))
         burst(9.0, 'w2', 't9', 'p9')
         self.assertEqual(engine.attribute({'at': 9.1, 'socket': 's'}), ('space', 'w2'))
+        burst(9.0, 'w3', 't3', 'p30')
+        burst(9.1, 'w4', 't4', 'p40')
+        self.assertIsNone(engine.attribute({'at': 9.2, 'socket': 's'}), 'two Spaces in one burst (review N1)')
         burst(9.0, 'w2', 't9', 'p8')
         burst(9.5, 'w2', 't9', 'p7')
         self.assertIsNone(engine.attribute({'at': 9.3, 'socket': 's'}), 'two focus changes near one click')
@@ -382,6 +391,27 @@ class EngineTest(unittest.TestCase):
         self.assertFalse(engine.branch_settled('s', 'w2', str(repo)), 'HEAD just moved')
         os.utime(repo/'.git/HEAD', (time.time() - 60, time.time() - 60))
         self.assertTrue(engine.branch_settled('s', 'w2', str(repo)))
+
+    def test_ambiguous_first_space_click_is_only_a_candidate(self):
+        # Review N1: before calibration a click on "project" may be on the "assets" row
+        # below it, so one click is not proof; a second agreeing click confirms it.
+        s = self.server.snapshot
+        ws = {w['label']: w for w in s['workspaces']}
+        model = render.build_model(120, 40, s, render.ui_from_config({'ui': {}}), render.Preferences())
+        y0 = model.find('space', ws['project']['workspace_id']).rect.y
+        x0 = self.window_xy[0] + 5 * CELL_W
+        top = self.window_xy[1] + TITLEBAR + y0 * CELL_H + 2
+        away, here = ws['assets']['workspace_id'], ws['project']['workspace_id']
+        steps = [(0.1, lambda: self.server.user_focus('workspace.focus', workspace_id=away)),
+                 (0.75, lambda: self.server.user_focus('workspace.focus', workspace_id=here)),
+                 (0.8, {'type': 'click', 'x': x0, 'y': top, 'window': self.window()}),
+                 (1.6, lambda: self.server.user_focus('workspace.focus', workspace_id=away)),
+                 (2.2, {'type': 'click', 'x': x0, 'y': top + CELL_H - 4, 'window': self.window()}),
+                 (2.25, lambda: self.server.user_focus('workspace.focus', workspace_id=here))]
+        lines = []
+        engine = self.run_engine(steps, log=lines.append)
+        self.assertEqual([l.split('calibration ')[1] for l in lines if 'calibration ' in l], ['candidate', 'learned'])
+        self.assertEqual(engine.status['calibrated'], 1)
 
     def test_unknown_herdr_version_is_inert(self):
         self.server.snapshot['version'] = '0.10.0'

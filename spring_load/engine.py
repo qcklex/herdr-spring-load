@@ -133,7 +133,7 @@ class Engine:
             self.write_status()
 
     def write_status(self):
-        data = dict(self.status, updated=time.time(), calibrated=len(self.calibration.data))
+        data = dict(self.status, updated=time.time(), calibrated=self.calibration.calibrated())
         try:
             self.support.mkdir(parents=True, exist_ok=True)
             fd, temp = tempfile.mkstemp(prefix='status.', dir=self.support)
@@ -475,8 +475,11 @@ class Engine:
             return None
         for change in near:
             self.changes.remove(change)
-        kind, target_id = min(((c[2], c[3]) for c in near), key=lambda c: LEVEL[c[0]])
-        return kind, target_id
+        kind = min((c[2] for c in near), key=LEVEL.get)
+        ids = {c[3] for c in near if c[2] == kind}
+        if len(ids) != 1:
+            return None   # two Spaces (or tabs) focused in one burst: which one was clicked is unknown
+        return kind, ids.pop()
 
     def learn(self, click, best):
         try:
@@ -486,7 +489,14 @@ class Engine:
         target = model.find(*best)
         if target is None:
             return
-        outcome = self.calibration.learn(click['key'], click['grid'], click['dx'], click['dy'], target.rect)
+        # Before any calibration the click's cell is uncertain by up to a few rows.
+        # Unless no other target of that kind lies in that range, one click is
+        # not proof: keep it provisional until a second click agrees.
+        (c0, c1), (r0, r1) = click['grid'].cells(click['dx'], click['dy'])
+        others = [t for t in model.targets if t.kind == target.kind and t.id != target.id
+                  and t.rect.x <= c1 and t.rect.right > c0 and t.rect.y <= r1 and t.rect.bottom > r0]
+        outcome = self.calibration.learn(click['key'], click['grid'], click['dx'], click['dy'], target.rect,
+                                         provisional=bool(others))
         self.log(f'click on {target.kind} {target.id}: calibration {outcome}')
         if outcome in ('impossible', 'disagrees'):
             # herdr focused this target, but not where the replica draws it.
@@ -497,7 +507,7 @@ class Engine:
             stamp = self.config_stamp(click['binding'].config_path)
             if stamp is not None:
                 self.verified[(click['client']['pid'], str(click['binding'].config_path))] = stamp
-        self.report(calibrated=len(self.calibration.data))
+        self.report(calibrated=self.calibration.calibrated())
 
     # MARK: plugin registration
 
