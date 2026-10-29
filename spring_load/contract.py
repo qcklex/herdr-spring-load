@@ -13,6 +13,8 @@ CAPABILITIES = {'drag', 'click', 'window', 'clients'}
 KINDS = {'files', 'other', 'unknown'}
 REASONS = {'released', 'cancelled'}
 LEVELS = {'info', 'warn', 'error'}
+CLIENT_ENV = {'HERDR_SESSION', 'HERDR_SOCKET_PATH', 'HERDR_CLIENT_SOCKET_PATH', 'HERDR_CONFIG_PATH', 'XDG_CONFIG_HOME',
+              'XDG_STATE_HOME', 'HOME', 'APPDATA', 'LOCALAPPDATA', 'USERPROFILE'}
 
 class ContractError(ValueError):
     pass
@@ -60,6 +62,12 @@ def validate_client(value):
               'xpixel': _int(value.get('xpixel', 0), 'client.xpixel'),
               'ypixel': _int(value.get('ypixel', 0), 'client.ypixel'),
               'foreground': foreground}
+    env = value.get('env')
+    if env is not None:
+        if not isinstance(env, dict) or not all(isinstance(k, str) and isinstance(v, str) for k, v in env.items()):
+            raise ContractError('client.env must be an object of strings or null')
+        env = {k: v for k, v in env.items() if k in CLIENT_ENV}
+    client['env'] = env
     for key in ('rows', 'cols', 'xpixel', 'ypixel'):
         if client[key] is not None and client[key] < 0:
             raise ContractError(f'client.{key} must not be negative')
@@ -117,6 +125,10 @@ def validate_event(event):
         if parsed['kind'] not in KINDS:
             raise ContractError(f'unknown drag kind {parsed["kind"]!r}')
         parsed['window'] = validate_window(event.get('window'))
+        everyone = event.get('all_clients')
+        if everyone is not None and not isinstance(everyone, list):
+            raise ContractError('all_clients must be an array or null')
+        parsed['all_clients'] = None if everyone is None else [validate_client(c) for c in everyone]
     elif kind in ('drag_move', 'click'):
         _point(event, parsed)
         parsed['window'] = validate_window(event.get('window'))
