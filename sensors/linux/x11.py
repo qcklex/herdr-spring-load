@@ -345,9 +345,10 @@ class X11:
         if not pid or not rect:
             return None
         frame_rect = self.bounds(frame)[0] if frame and frame != window else rect
+        walked = self.cache.get(window, pid)
         described = {'id': str(window), 'pid': pid, 'app': self.app(window), 'bounds': rect, 'scale': 1.0,
-                     'peers': self.peers(window, pid), 'clients': self.cache.get(window, pid),
-                     'frame': frame_rect}
+                     'peers': self.peers(window, pid), 'sessions': len(walked[1]) if walked else None,
+                     'clients': walked[0] if walked else None, 'frame': frame_rect}
         self.described = (window, at, described)
         return described
 

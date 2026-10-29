@@ -184,6 +184,34 @@ class ProcTest(unittest.TestCase):
         self.assertEqual(common.tty_path(PTS(300)), '/dev/pts/300')
         self.assertIsNone(common.tty_path(0))
 
+    def test_tab_ttys_stop_at_the_first_tty_on_each_branch(self):
+        p = self.proc
+        p.add(43, 'herdr', 41, tty_nr=0, argv=['herdr', 'server'])               # server below the client, no tty
+        p.add(44, 'sh', 43, pgrp=44, tty_nr=PTS(9), tpgid=44, argv=['sh'])        # a herdr pane: not a tab
+        p.add(80, 'helper', 30, argv=['helper'])                                  # no tty: look below it
+        p.add(81, 'bash', 80, pgrp=81, tty_nr=PTS(5), tpgid=81, argv=['bash'])
+        clients, ttys = common.terminal_processes(30, proc=self.tmp.name, size=lambda path: None)
+        self.assertEqual([c['pid'] for c in clients], [41, 42, 60])
+        self.assertEqual(ttys, {PTS(3), PTS(300), PTS(4), PTS(5)})
+
+    def hidden_tab_terminal(self, *tabs, owner=90):
+        """A single-process terminal with one tab per tty number; herdr in the first."""
+        p = self.proc
+        p.add(owner, 'kitty', 1, argv=['kitty'])
+        for n, tty in enumerate(tabs):
+            p.add(owner + 1 + 2 * n, 'sh', owner, pgrp=owner + 1 + 2 * n, tty_nr=PTS(tty), tpgid=owner + 1 + 2 * n,
+                  argv=['sh'])
+        p.add(owner + 2, 'herdr', owner + 1, pgrp=owner + 2, tty_nr=PTS(tabs[0]), tpgid=owner + 2, argv=['herdr'],
+              exe='/usr/local/bin/herdr')
+        return common.terminal_processes(owner, proc=self.tmp.name, size=lambda path: (36, 110, 990, 648))
+
+    def test_a_hidden_tab_terminal_counts_its_tabs_not_herdr_panes(self):
+        clients, ttys = self.hidden_tab_terminal(10, 11)       # herdr in one tab, a shell in the other
+        self.assertEqual([(c['pid'], c['foreground']) for c in clients], [(92, True)])
+        self.assertEqual(ttys, {PTS(10), PTS(11)})
+        clients, ttys = self.hidden_tab_terminal(12, owner=190)
+        self.assertEqual((len(clients), len(ttys)), (1, 1))
+
     def test_client_cache_refreshes_on_window_change_and_after_a_second(self):
         calls, clock = [], [0.0]
         cache = common.ClientCache(lookup=lambda pid: calls.append(pid) or [pid], clock=lambda: clock[0])
@@ -243,7 +271,7 @@ class HyprlandTest(unittest.TestCase):
                 hypr_client('0xe', 700, [0, 0], [100, 100], hidden=True),
             ]})
         self.backend = hyprland.Hyprland(self.fake.path)
-        self.backend.cache = common.ClientCache(lookup=lambda pid: [])
+        self.backend.cache = common.ClientCache(lookup=lambda pid: ([], set()))
 
     def tearDown(self):
         self.fake.close()
@@ -259,6 +287,17 @@ class HyprlandTest(unittest.TestCase):
         window = self.backend.describe(100, 900)
         self.assertEqual(window['id'], '0xa')
         self.assertEqual(window['peers'], [{'x': 960, 'y': 0, 'width': 960, 'height': 1080}])
+
+    def test_window_reports_sessions_for_the_core_hidden_tab_rule(self):
+        herdr = {'pid': 5, 'argv': ['herdr'], 'tty': '/dev/pts/1', 'rows': 36, 'cols': 110, 'xpixel': 990,
+                 'ypixel': 648, 'foreground': True, 'started': 1.0, 'env': {}}
+        self.backend.cache = common.ClientCache(lookup=lambda pid: ([herdr], {1, 2, 3}))
+        window = self.backend.describe(100, 900)                # 0xa and its peer 0xb
+        self.assertEqual((window['sessions'], len(window['peers']), window['clients']), (3, 1, [herdr]))
+        self.assertEqual(contract.validate_window(window)['sessions'], 3)
+        self.backend.cache = common.ClientCache(lookup=lambda pid: None)
+        window = self.backend.describe(100, 900)
+        self.assertEqual((window['sessions'], window['clients']), (None, None))
 
     def test_socket_path_prefers_xdg_runtime_dir(self):
         with tempfile.TemporaryDirectory() as runtime:

@@ -248,26 +248,40 @@ def client_record(pid, stat, proc='/proc', size=winsize):
             'env': read_env(pid, proc)}
 
 
-def herdr_clients(owner_pid, proc='/proc', size=winsize):
-    """Every herdr process with a controlling tty below owner_pid (docs/SENSOR.md, section 2.1).
+def terminal_processes(owner_pid, proc='/proc', size=winsize):
+    """(herdr clients, tab ttys) below the terminal process owner_pid, or None when
+    the process tree cannot be read at all.
 
-    Returns None when the process tree cannot be read at all."""
+    Clients are every herdr process with a controlling tty below owner_pid
+    (docs/SENSOR.md, section 2.1). Tab ttys are the controlling ttys of the
+    first process with one on each branch below the terminal: one per tab or
+    split it hosts, reported as window.sessions. Deeper ttys (herdr's own
+    panes, a nested pty) are not tabs."""
     tree = children_map(proc)
     if tree is None:
         return None
-    found, stack, seen = [], [owner_pid], set()
+    found, ttys, stack, seen = [], set(), [(owner_pid, False)], set()
     while stack:
-        parent = stack.pop()
+        parent, below_tty = stack.pop()
         for pid, stat in tree.get(parent, []):
             if pid in seen:
                 continue
             seen.add(pid)
-            stack.append(pid)
+            tty_nr = stat[3]
+            if tty_nr and not below_tty:
+                ttys.add(tty_nr)
+            stack.append((pid, below_tty or bool(tty_nr)))
             record = client_record(pid, stat, proc, size)
             if record:
                 found.append(record)
     found.sort(key=lambda client: client['pid'])
-    return found
+    return found, ttys
+
+
+def herdr_clients(owner_pid, proc='/proc', size=winsize):
+    """Every herdr process with a controlling tty below owner_pid, or None when the process tree cannot be read."""
+    walked = terminal_processes(owner_pid, proc, size)
+    return None if walked is None else walked[0]
 
 
 def all_herdr_clients(proc='/proc', size=winsize, uid=None):
@@ -293,7 +307,7 @@ def all_herdr_clients(proc='/proc', size=winsize, uid=None):
 class ClientCache:
     """Client lookup on drag start, on a window change, and at most once a second otherwise."""
 
-    def __init__(self, lookup=herdr_clients, clock=time.monotonic):
+    def __init__(self, lookup=terminal_processes, clock=time.monotonic):
         self.lookup, self.clock = lookup, clock
         self.key = None
         self.value = None

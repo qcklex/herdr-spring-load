@@ -81,10 +81,11 @@ class Hyprland:
         pid = top.get('pid')
         if not isinstance(pid, int) or pid <= 0:
             return None
+        walked = self.cache.get(top.get('address'), pid)
         return {'id': top.get('address', ''), 'pid': pid, 'app': top.get('class') or None,
                 'bounds': rect(top), 'scale': scale_of.get(top['workspace']['id']),
                 'peers': [rect(c) for c in candidates if c is not top and c.get('pid') == pid],
-                'clients': self.cache.get(top.get('address'), pid)}
+                'sessions': len(walked[1]) if walked else None, 'clients': walked[0] if walked else None}
 
 
 def contains(client, x, y):
