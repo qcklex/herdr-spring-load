@@ -426,12 +426,77 @@ def git_head_path(cwd):
         return None
     return None
 
-def identity_cwd(snapshot, workspace_id):
-    """The cwd herdr names a workspace by: its first tab's root pane. The API
-    does not say which pane is the root, so all panes of that tab must agree."""
+def saved_identity_roots(snapshot, saved):
+    """Root-pane hints from herdr 0.9.3's v3 session file, accepted only when
+    its ordered tabs and pane membership match the live API. Read cwd from
+    the live pane, never from the saved file. Stale/malformed hints are ignored.
+    """
+    if not isinstance(saved, dict) or saved.get('version') != 3:
+        return {}
+    alphabet = '123456789ABCDEFGHJKMNPQRSTVWXYZ0'
+    def public_number(value):
+        if type(value) is not int or value <= 0:
+            raise ValueError('invalid public number')
+        text = ''
+        while value:
+            value, digit = divmod(value - 1, len(alphabet))
+            text = alphabet[digit] + text
+        return text
+    roots = {}
+    workspaces = saved.get('workspaces')
+    if not isinstance(workspaces, list):
+        return roots
+    for workspace in snapshot.get('workspaces', []):
+        key = workspace['workspace_id']
+        matches = [w for w in workspaces if isinstance(w, dict) and w.get('id') == key]
+        if len(matches) != 1:
+            continue
+        record = matches[0]
+        tabs = [t for t in snapshot.get('tabs', []) if t.get('workspace_id') == key]
+        try:
+            numbers, saved_tabs = record['public_tab_numbers'], record['tabs']
+            if not tabs or len(numbers) != len(saved_tabs) or len(tabs) != len(saved_tabs):
+                continue
+            mapping = record['public_pane_numbers']
+            ids = {internal: key + ':p' + public_number(number) for internal, number in mapping.items()}
+            if len(set(ids.values())) != len(ids):
+                continue
+            valid = True
+            for tab, number, stored in zip(tabs, numbers, saved_tabs):
+                if tab['tab_id'] != key + ':t' + public_number(number):
+                    valid = False
+                    break
+                expected = {ids[internal] for internal in stored['panes']}
+                live = {p['pane_id'] for p in snapshot.get('panes', []) if p.get('tab_id') == tab['tab_id']}
+                if not expected or expected != live:
+                    valid = False
+                    break
+            if not valid:
+                continue
+            first = saved_tabs[0]
+            root = str(first['root_pane'])
+            if root not in first['panes']:
+                continue
+            root_id = ids[root]
+            pane = next(p for p in snapshot['panes'] if p['pane_id'] == root_id and p['tab_id'] == tabs[0]['tab_id'])
+            # A pending cwd save may also mean the cached branch is catching up.
+            if pane.get('cwd') and pane['cwd'] == first['panes'][root]['cwd']:
+                roots[key] = root_id
+        except (KeyError, TypeError, ValueError, StopIteration, AttributeError):
+            continue
+    return roots
+
+def identity_cwd(snapshot, workspace_id, roots=None):
+    """The first tab's root cwd. Use a validated saved root when available;
+    otherwise require all panes of that tab to agree, since the API omits root."""
     tabs = [t for t in snapshot.get('tabs', []) if t.get('workspace_id') == workspace_id]
     if not tabs:
         return None
+    root = (roots or {}).get(workspace_id)
+    if root:
+        panes = [p for p in snapshot.get('panes', []) if p.get('tab_id') == tabs[0]['tab_id'] and p.get('pane_id') == root]
+        if len(panes) == 1:
+            return panes[0].get('cwd')
     cwds = {p.get('cwd') for p in snapshot.get('panes', []) if p.get('tab_id') == tabs[0]['tab_id']}
     return cwds.pop() if len(cwds) == 1 else None
 
@@ -456,7 +521,7 @@ def pane_targets(surface, layout):
     return targets
 
 def build_model(cols, rows, snapshot, ui, prefs, remote_endpoints=False, branch_present=git_branch_present,
-                branch_settled=lambda workspace_id, cwd: True):
+                branch_settled=lambda workspace_id, cwd: True, identity_roots=None):
     """All targets of a client of size cols x rows showing `snapshot`
     (session.snapshot's `snapshot` object, as seen by its single client).
     `branch_settled(workspace_id, cwd)` is False while herdr's asynchronous
@@ -494,7 +559,7 @@ def build_model(cols, rows, snapshot, ui, prefs, remote_endpoints=False, branch_
                 def branch_of(workspace):
                     key = workspace['workspace_id']
                     if key not in cache:
-                        cwd = identity_cwd(snapshot, key)
+                        cwd = identity_cwd(snapshot, key, identity_roots)
                         cache[key] = None if cwd is None or not branch_settled(key, cwd) else branch_present(cwd)
                     return cache[key]
                 model.targets += expanded_sidebar_targets(shell.sidebar, workspaces, ui, prefs, branch_of)

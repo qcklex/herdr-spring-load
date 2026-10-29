@@ -637,6 +637,34 @@ class EngineTest(unittest.TestCase):
         self.assertEqual(self.server.focus_calls(), [])
         self.assertIn('does not draw it', engine.status['reason'])
 
+    def test_saved_root_metadata_restores_spaces_for_mixed_directory_panes(self):
+        snapshot = self.server.snapshot
+        first = snapshot['tabs'][0]
+        original = next(p for p in snapshot['panes'] if p['tab_id'] == first['tab_id'])
+        snapshot['panes'].append(dict(original, pane_id='w1:p5', cwd=str(self.temp/'other')))
+        engine = core.Engine(ScriptedSensor([]), self.temp/'support', env=self.env)
+        from spring_load import clients
+        binding = clients.bind(self.client(), self.env)
+        before, _ = engine.read_model(binding, self.client())
+        self.assertIn('space', before.refused)
+        record = {'id': 'w1', 'public_tab_numbers': [1, 2, 3],
+                  'public_pane_numbers': {str(i): i for i in range(1, 6)}, 'tabs': []}
+        for tab in snapshot['tabs']:
+            if tab['workspace_id'] == 'w1':
+                panes = {p['pane_id'].split(':p')[1]: {'cwd': p['cwd']} for p in snapshot['panes']
+                         if p['tab_id'] == tab['tab_id']}
+                record['tabs'].append({'root_pane': int(next(iter(panes))), 'panes': panes})
+        saved = self.config/'session.json'
+        saved.write_text(json.dumps({'version': 3, 'workspaces': [record]}), encoding='utf-8')
+        after, _ = engine.read_model(binding, self.client())
+        self.assertNotIn('space', after.refused)
+        self.assertEqual(len([t for t in after.targets if t.kind == 'space']), len(snapshot['workspaces']))
+        # Stale membership must never keep a trusted root after a pane closes.
+        record['tabs'][0]['panes'].pop('5')
+        saved.write_text(json.dumps({'version': 3, 'workspaces': [record]}), encoding='utf-8')
+        stale, _ = engine.read_model(binding, self.client())
+        self.assertIn('space', stale.refused)
+
     def test_changed_identity_cwd_unsettles_the_branch_row(self):
         # Review M2
         engine = core.Engine(ScriptedSensor([]), self.temp/'support', env=self.env)

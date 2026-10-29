@@ -1,6 +1,7 @@
 """Golden tests: the renderer replica against screens of a real herdr 0.9.3
 (tests/golden, recorded by tools/record_golden.py in scratch sessions)."""
 import json
+import copy
 from pathlib import Path
 import sys
 import tempfile
@@ -253,3 +254,63 @@ class ReplicaRulesTest(unittest.TestCase):
     def test_rust_rounding(self):
         self.assertEqual(render.section_heights(13, 0.5), (7, 6))
         self.assertEqual(render.section_heights(5, 0.5), (3, 2))
+
+class SavedIdentityTest(unittest.TestCase):
+    def setUp(self):
+        self.snapshot = {
+            'workspaces': [{'workspace_id': 'w1'}],
+            'tabs': [{'workspace_id': 'w1', 'tab_id': 'w1:t1'}],
+            'panes': [{'pane_id': 'w1:p1', 'tab_id': 'w1:t1', 'cwd': '/plain'},
+                      {'pane_id': 'w1:p2', 'tab_id': 'w1:t1', 'cwd': '/repo'}]}
+        self.saved = {'version': 3, 'workspaces': [{
+            'id': 'w1', 'public_tab_numbers': [1], 'public_pane_numbers': {'10': 1, '20': 2},
+            'tabs': [{'root_pane': 10, 'panes': {'10': {'cwd': '/plain'}, '20': {'cwd': '/repo'}}}]}]}
+
+    def test_split_directories_resolve_to_the_live_root_cwd(self):
+        self.assertIsNone(render.identity_cwd(self.snapshot, 'w1'))
+        roots = render.saved_identity_roots(self.snapshot, self.saved)
+        self.assertEqual(roots, {'w1': 'w1:p1'})
+        self.assertEqual(render.identity_cwd(self.snapshot, 'w1', roots), '/plain')
+        self.saved['workspaces'][0]['tabs'][0]['root_pane'] = 20
+        roots = render.saved_identity_roots(self.snapshot, self.saved)
+        self.assertEqual(render.identity_cwd(self.snapshot, 'w1', roots), '/repo')
+
+    def test_missing_moved_or_new_panes_reject_stale_roots(self):
+        for mutate in (
+            lambda s: s['panes'].pop(),
+            lambda s: s['panes'].append({'pane_id': 'w1:p3', 'tab_id': 'w1:t1', 'cwd': '/plain'}),
+            lambda s: s['panes'][0].update(tab_id='w1:t2'),
+            lambda s: s['tabs'][0].update(tab_id='w1:t2'),
+            lambda s: s['panes'][0].update(cwd='/changed'),
+        ):
+            snapshot = copy.deepcopy(self.snapshot)
+            mutate(snapshot)
+            self.assertEqual(render.saved_identity_roots(snapshot, self.saved), {})
+
+    def test_malformed_or_ambiguous_saved_metadata_is_ignored(self):
+        for mutate in (
+            lambda s: s.update(version=2),
+            lambda s: s['workspaces'].append(copy.deepcopy(s['workspaces'][0])),
+            lambda s: s['workspaces'][0].update(public_pane_numbers={'10': 1, '20': 1}),
+            lambda s: s['workspaces'][0]['tabs'][0].update(root_pane=99),
+            lambda s: s['workspaces'][0].update(public_tab_numbers=[True]),
+            lambda s: s['workspaces'][0].update(tabs=[None]),
+        ):
+            saved = copy.deepcopy(self.saved)
+            mutate(saved)
+            self.assertEqual(render.saved_identity_roots(self.snapshot, saved), {})
+
+    def test_root_hint_restores_spaces_without_using_an_unrelated_pane_branch(self):
+        record, before, ui = load('spaces_tabs')
+        snapshot = copy.deepcopy(record['snapshot'])
+        first = snapshot['tabs'][0]
+        original = next(p for p in snapshot['panes'] if p['tab_id'] == first['tab_id'])
+        extra = dict(original, pane_id='w1:p99', cwd='/different/git/repo')
+        snapshot['panes'].append(extra)
+        refused = render.build_model(record['cols'], record['rows'], snapshot, ui, render.Preferences())
+        self.assertIn('space', refused.refused)
+        fixed = render.build_model(record['cols'], record['rows'], snapshot, ui, render.Preferences(),
+                                   identity_roots={'w1': original['pane_id']})
+        self.assertNotIn('space', fixed.refused)
+        self.assertEqual([t for t in fixed.targets if t.kind == 'space'],
+                         [t for t in before.targets if t.kind == 'space'])

@@ -327,6 +327,21 @@ class Engine:
         self.ensure_subscription(binding.api_socket)
         return self.context
 
+    def identity_roots(self, api_socket, snapshot):
+        path = Path(api_socket).parent/'session.json'
+        try:
+            # Persistence holds metadata only; avoid an unbounded read per move.
+            if path.stat().st_size > 8_000_000:
+                return {}
+            with path.open(encoding='utf-8') as source:
+                text = source.read(8_000_001)
+            if len(text) > 8_000_000:
+                return {}
+            saved = json.loads(text)
+        except (OSError, ValueError, UnicodeDecodeError):
+            return {}
+        return render.saved_identity_roots(snapshot, saved)
+
     def read_model(self, binding, client):
         try:
             snapshot = herdr_api.snapshot(binding.api_socket, timeout=0.5)
@@ -342,7 +357,8 @@ class Engine:
             raise Unavailable(f'cannot read {prefs_file}')
         remote = render.remote_endpoints_listed(binding.state_dir)
         model = render.build_model(client['cols'], client['rows'], snapshot, ui, prefs, remote_endpoints=remote,
-                                   branch_settled=lambda ws, cwd: self.branch_settled(binding.api_socket, ws, cwd))
+                                   branch_settled=lambda ws, cwd: self.branch_settled(binding.api_socket, ws, cwd),
+                                   identity_roots=self.identity_roots(binding.api_socket, snapshot))
         if model.refused:
             self.report(refused=dict(model.refused))
         elif self.status.get('refused'):
@@ -468,8 +484,9 @@ class Engine:
             return
         # Baseline of every workspace's identity cwd, so a cd before the first drag
         # counts as a change (review M2).
+        roots = self.identity_roots(api_socket, snapshot)
         for workspace in snapshot.get('workspaces', []):
-            cwd = render.identity_cwd(snapshot, workspace.get('workspace_id'))
+            cwd = render.identity_cwd(snapshot, workspace.get('workspace_id'), roots)
             if cwd is not None:
                 self.identities.setdefault((api_socket, workspace['workspace_id']), (cwd, -1e18))
         # Queued after any event that came first, so the main thread applies it in order.
