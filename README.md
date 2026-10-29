@@ -1,9 +1,12 @@
 # herdr-spring-load
 
-Spring-loaded drag and drop for herdr on macOS. While you hold a file over a
-Ghostty window running herdr, pause over a space in the sidebar to open it,
-over a tab to switch to it, or over a pane to focus it. Then release, and
-Ghostty drops the file path into that pane as usual.
+Spring-loaded drag and drop for herdr. While you hold a file over a terminal
+window running herdr, pause over a Space in the sidebar to open it, over a
+tab to switch to it, or over a pane to focus it. Then release, and the
+terminal drops the file into that pane as usual.
+
+It needs no OS permission, sends no keys or clicks to any app, and does not
+edit the herdr config. It is not tied to one terminal.
 
 ![Illustrated demo: holding a file, hovering a tab, then a space in the sidebar, then a pane, and releasing it there](docs/spring-load-demo.gif)
 
@@ -14,30 +17,56 @@ Ghostty drops the file path into that pane as usual.
 Like spring-loaded folders in Finder, you keep holding the file while you
 navigate:
 
-1. Drag a file from Finder (or any app that drags files) over a Ghostty window
-   running herdr, and keep the mouse button down.
-2. Pause over a space name in the sidebar for 0.6 s to open that space.
+1. Drag a file from Finder (or any app that drags files) over a terminal
+   window running herdr, and keep the mouse button down.
+2. Pause over a Space in the sidebar for 0.6 s to open that Space.
 3. Pause over a tab label in the tab row for 0.6 s to switch to that tab.
 4. Pause over a pane for 0.25 s to focus it.
-5. Release. Ghostty pastes the file path into the focused pane, exactly as it
+5. Release. The terminal pastes the file into the focused pane, exactly as it
    would without this plugin.
 
-You can open a space, then a tab, then a pane in one drag. The plugin never
+You can open a Space, then a tab, then a pane in one drag. The plugin never
 handles the drop itself.
+
+**Once per window size:** Spaces and tabs switch only after you have clicked
+a different tab or Space once in that window, without dragging anything. The
+plugin cannot see where the terminal draws herdr inside its window
+(titlebar, native tabs, padding); that click shows it. Panes are large
+enough to work right away.
+
+## How it works
+
+The plugin only selects; herdr and the terminal do everything else.
+
+- A small **sensor** only observes, without any permission: whether a drag
+  is held (the drag pasteboard's change count and the mouse buttons, never
+  its contents), the pointer position, the window under the pointer (its
+  frame and owning process from the window list), and the herdr client
+  processes behind that window (the process tree and each client tty's
+  size).
+- A Python **core** (standard library only) replicates how herdr 0.9.3 lays
+  out its sidebar, tab bar and panes, maps the pointer to a Space, tab or
+  pane, and after the dwell time calls herdr's public `workspace.focus`,
+  `tab.focus` or `pane.focus`.
+- herdr's focus calls move every client attached to that session, so the
+  core acts only when exactly one local client is attached. Otherwise it
+  does nothing and says why in the status action.
+
+See [DESIGN.md](DESIGN.md) for the details and
+[docs/SENSOR.md](docs/SENSOR.md) for the sensor contract.
 
 ## Requirements
 
-- macOS, with Ghostty 1.3 or newer. Ghostty's AppleScript support must be on.
-  It is on by default, so only check that your Ghostty config does not set
-  `macos-applescript = false`.
-- herdr 0.9.3 or newer, with mouse capture on (`ui.mouse_capture`, on by
-  default).
+- macOS. The core already runs on Linux and Windows; their sensors are in
+  progress.
+- herdr 0.9.3. The plugin acts only on herdr versions its replica was
+  checked against, and does nothing on others.
 - Xcode Command Line Tools (`xcode-select --install`), used to compile the
-  helper.
-- Python 3.11 or newer. The `/usr/bin/python3` that ships with macOS is older;
-  `brew install python` provides a newer one. Setup looks for `python3.14`
-  down to `python3.11`, then `python3`, `/opt/homebrew/bin/python3` and
-  `/usr/local/bin/python3`.
+  sensor.
+- Python 3.11 or newer (the core reads herdr's TOML config with `tomllib`).
+  The `/usr/bin/python3` that ships with macOS is older; `brew install python`
+  provides a newer one. Setup looks for `python3.14` down to `python3.11`,
+  then `python3`, `/opt/homebrew/bin/python3` and `/usr/local/bin/python3`.
 
 ## Install
 
@@ -46,70 +75,31 @@ herdr plugin install qcklex/herdr-spring-load
 ```
 
 herdr shows its install preview, including the one build command
-(`sh scripts/build.sh`), and asks you to confirm. That build step does the
-whole setup:
+(`sh scripts/build.sh`), and asks you to confirm. That build step:
 
-- compiles the helper with `swiftc` and checks that the binary runs;
-- signs it with a local certificate kept in its own keychain, so macOS
-  permissions can survive updates (see
-  [Signing and security](#signing-and-security));
-- installs it in `~/Library/Application Support/herdr-spring-load`;
-- adds the helper's private keybindings to the herdr config, after saving a
-  backup (see [What setup changes](#what-setup-changes));
-- starts the helper as the per-user LaunchAgent
-  `dev.qcklex.herdr-spring-load`, so it also starts at login;
-- reloads the config in every running herdr session, the default one and any
-  named ones. Sessions that are not running pick the keybindings up when they
-  start. No herdr server has to be running during install.
+- compiles the sensor with `xcrun swiftc` and checks that it speaks the
+  sensor contract;
+- copies the core to `~/Library/Application Support/herdr-spring-load`;
+- starts the per-user LaunchAgent `dev.qcklex.herdr-spring-load`
+  (`python3 -m spring_load run`), so it also starts at login.
 
-If any step fails, everything setup changed is put back, herdr reports the
-failure, and the plugin is not installed. Setup also stops before changing
-anything when Python 3.11, the command line tools or herdr's own config check
-is not satisfied, or when the config has a conflict (see below).
+If any step fails, everything setup changed is put back and the previous
+install keeps running. Setup asks for no permission and signs nothing.
 
-### First use: two macOS permissions
-
-macOS asks twice, and only you can answer:
-
-1. **Accessibility.** Right after install, the helper asks macOS for
-   Accessibility, and macOS adds `herdr-spring-load` to System Settings >
-   Privacy & Security > Accessibility. Turn it on. The helper uses it to read
-   the Ghostty window's geometry and the text of herdr's tab row and sidebar.
-   Until it is on, the helper does nothing.
-2. **Automation for Ghostty.** The first time a file drag reaches a Ghostty
-   window, macOS asks for permission to control Ghostty. Allow it. The helper
-   uses Ghostty's AppleScript to send its private keys to that one terminal
-   and to click a tab or space label there.
-
-Input Monitoring and Screen Recording are not needed.
-
-### What setup changes
-
-- The herdr config: `$HERDR_CONFIG_PATH`, otherwise
-  `$XDG_CONFIG_HOME/herdr/config.toml` or `~/.config/herdr/config.toml`. A
-  symlinked config stays a symlink. First a backup is saved next to it as
-  `config.toml.spring-load-<time>.bak`; the three newest are kept. Then:
-  - a marked block binds `ctrl+alt+shift+F1` to `F7` to the plugin's private
-    `probe-1` to `probe-7` actions;
-  - `ctrl+alt+shift+F8` to `F11` are added to `focus_pane_left`, `right`,
-    `up` and `down`. Your existing focus shortcuts are kept.
-- Setup refuses, and changes nothing, if any of those eleven chords is
-  already bound to something else, if `ui.mouse_capture` is off, if
-  `herdr config check` reports a new problem with the edited config, or if
-  the edit would change any other setting.
-- The tab bar position (`tab_bar_position`) is read from the config during
-  setup. If you move the tab bar later, run setup again.
+**Upgrading from 0.2.0.** Setup also removes what 0.2.0 left behind: the
+private keybindings in the herdr config (it saves
+`config.toml.spring-load-0.2.bak` first and reloads running sessions), the
+signing keychain and the terminal-specific helper. 0.2.0's entries under
+Accessibility and Automation in System Settings are no longer used; you can
+remove them.
 
 ## Actions and the setup pane
 
-The plugin adds these to herdr's plugin menu:
-
 | Entry | Kind | What it does |
 |---|---|---|
-| Spring-load helper status | action `status` | Reports whether the helper is running. Changes nothing. |
-| Set up herdr-spring-load | pane `setup` | Runs the same setup as install again, in an overlay that waits for Enter. Use it to repair the install or after moving the tab bar. |
-| Remove herdr-spring-load helper and keybindings | action `remove-helper` | Removes the helper. See [Uninstall](#uninstall). |
-| Spring-load client probe 1 to 7 | actions `probe-1` to `probe-7` | Private. Bound to the probe keys; not meant to be run by hand. |
+| Spring-load helper status | action `status` | Reports what the helper is doing, which targets are off and why, how many window shapes are calibrated, and the last navigation. Changes nothing. |
+| Set up herdr-spring-load | pane `setup` | Runs the same setup as install again, in an overlay that waits for Enter. |
+| Remove herdr-spring-load helper | action `remove-helper` | Removes the helper. See [Uninstall](#uninstall). |
 
 From a shell:
 
@@ -117,191 +107,92 @@ From a shell:
 herdr plugin action invoke herdr-spring-load.status
 ```
 
-Logs: `~/Library/Logs/herdr-spring-load.log` (moved to `.log.old` at about
-1 MB), and `~/Library/Logs/herdr-spring-load.stderr.log` for the LaunchAgent.
+Log: `~/Library/Logs/herdr-spring-load.log` (moved to `.log.old` at about
+1 MB).
 
 ## Uninstall
 
 herdr has no uninstall hook for plugins, so remove the helper first:
 
-1. Run the plugin action "Remove herdr-spring-load helper and keybindings",
-   or from a shell:
-
-   ```sh
-   herdr plugin action invoke herdr-spring-load.remove-helper
-   ```
-
-   It stops the helper and deletes its LaunchAgent and binary. It takes out
-   of the herdr config exactly what setup added: the probe block and the four
-   focus chords. A focus shortcut that setup had to create is removed again,
-   and a shortcut you had keeps the form you wrote it in. The config is
-   backed up first (`config.toml.spring-load-uninstall.bak`) and reloaded in
-   every running session. If anything fails, nothing is removed.
-2. Then unregister the plugin:
-
-   ```sh
-   herdr plugin uninstall herdr-spring-load
-   ```
-
-3. Optionally, remove `herdr-spring-load` from Accessibility and Automation
-   in System Settings > Privacy & Security.
-
-The signing keychain and the logs are kept, so a reinstall keeps the macOS
-grants. To also delete the keychain and everything in
-`~/Library/Application Support/herdr-spring-load`, run this instead of
-step 1, while the plugin is still installed:
-
 ```sh
-sh ~/.config/herdr/plugins/github/herdr-spring-load-1b5077dac181/helper/uninstall.sh --purge
+herdr plugin action invoke herdr-spring-load.remove-helper
+herdr plugin uninstall herdr-spring-load
 ```
 
-That is where herdr 0.9.3 keeps the installed checkout (under
-`$XDG_CONFIG_HOME/herdr` if you set it). From a clone, run
-`sh helper/uninstall.sh --purge`. macOS then asks for Accessibility again on
-a later install.
+The first command stops the helper and deletes its LaunchAgent, sensor, core
+copy and support files. From a clone, `sh helper/uninstall.sh` does the same.
 
-### If you run `herdr plugin uninstall` first
-
-herdr deletes the plugin's checkout but cannot tell the helper. The helper
-keeps its own copy of the removal scripts, and checks herdr's plugin list
-whenever a file drag starts:
-
-- If it has seen the plugin registered before and the entry is now gone, it
-  runs the same removal as `remove-helper` on that drag, then exits.
-- If it never saw the plugin registered (you uninstalled before your first
-  file drag), if the plugin is disabled, or if herdr's entry points to a
-  manifest that no longer exists, it does nothing during drags. It writes to
-  its log, and shows a notification once, with
-  `herdr plugin enable herdr-spring-load` and the exact command that removes
-  it.
-
-Until one of those happens, the LaunchAgent stays loaded and the private
-chords stay in the herdr config.
-
-### Upgrading
-
-Run the install command again. Setup builds and signs the new helper first,
-and only then stops the old one and swaps it in. If the plugin was linked
-from a local clone, run `herdr plugin unlink herdr-spring-load` first.
-
-0.1.0 was a different tool, an image previewer. Setup replaces its helper,
-which used the same LaunchAgent label. If you installed 0.1.0 under its
-first name, herdr-image-drop, remove that agent once:
-
-```sh
-launchctl bootout "gui/$(id -u)/dev.qcklex.herdr-image-drop"
-rm -f ~/Library/LaunchAgents/dev.qcklex.herdr-image-drop.plist
-```
+If you run `herdr plugin uninstall` first, the helper notices at the next
+file drags: when herdr no longer lists the plugin on two checks at least 3 s
+apart, and the checkout herdr had registered is gone, it removes itself the
+same way. While the plugin is disabled, it pauses.
 
 ## Known limits
 
-- **Not yet tried on a real drag.** See [Test evidence](#test-evidence) for
-  what is and is not verified.
-- **Ghostty only.** Windows split into several Ghostty terminals are not
-  supported. Two Ghostty windows with the same title are ambiguous, and the
-  helper does nothing in either.
-- **Two herdr windows of the same size do nothing.** Before it sends its
-  probe key, the helper needs exactly one local herdr client under Ghostty,
-  in the foreground of its terminal, whose pixel size fits the window under
-  the cursor. With two herdr windows of the same size, or one next to a
-  remote herdr window of the same size, it does nothing rather than risk
-  typing into the wrong one.
-- **Local clients only.** `herdr --remote` clients are skipped.
-- **Spaces:** only herdr's default sidebar layout works: the "spaces"
-  header, then one label row per space, all visible and drawn in full. A
-  scrolled space list, worktree groups, custom sidebar rows, truncated labels
-  or a collapsed sidebar give no space targets.
-- **Tabs:** a tab switches only when every tab label is drawn in full,
-  followed by the new-tab control. If labels overflow or one is truncated,
-  tab switching is off for that row. The new-tab, zoom and plugin controls
-  are never clicked.
-- **Panes:** focus moves one neighbour at a time with herdr's own
-  focus-direction keys, so it passes through the panes in between. If herdr
-  lands somewhere unexpected, navigation stops.
-- If a tab or space click lands somewhere other than expected, tab and space
-  switching stop for the rest of that drag.
-- Up to seven Ghostty terminals can be in use at a time. Another one waits
-  until one of them is closed.
-- If three probe keys in a row get no answer (for example while the plugin
-  is disabled), the helper sends none for 60 seconds.
+- **One client per session.** With two clients attached to the same herdr
+  session (two windows, or a local and a remote one), nothing happens: a
+  focus call would move both.
+- **Finding the client.** The sensor finds herdr clients that run under the
+  terminal app's own processes, inside tmux (through the window's tmux
+  client), and in terminals whose sessions run in a separate server process
+  (through macOS's responsible process). GNU screen, and other session
+  servers it cannot map to a window, stay inert. Two windows of the same
+  size in one terminal app are ambiguous, and the plugin does nothing in
+  either.
+- **Spaces:** herdr's sidebar must be visible. A scrolled Space list, rows
+  with text herdr computes at runtime (hostname, time, command output), or
+  labels whose width the replica cannot be sure of give no Space targets.
+  For 5 s after a Space's directory or git branch changes, its rows are not
+  used.
+- **Tabs:** tab switching is off while the tab row overflows and scrolls.
+  The new-tab and other controls are never targets.
+- **Config changes.** When herdr's config changed after a client started,
+  the plugin cannot tell which config that client shows. A click on a
+  different tab confirms tabs and panes, and a click on a Space below the
+  first confirms Spaces. Restarting the client also works.
+- **A click that does not fit.** If herdr focuses a tab or Space where the
+  calibration says it is not drawn, spring-loading stops for that window
+  until you click a different tab or Space again and that click agrees.
 - A cancelled drag does not undo the navigation already done.
 - Do not run it next to another drag helper such as herdr-focus-pane's drag
   assist or herdr-drag-to-tab; they would move focus during the same drag.
   Setup warns when it finds a herdr-focus-pane LaunchAgent.
 
-## Signing and security
-
-Every build is signed with the same self-signed local certificate, under the
-identifier `dev.qcklex.herdr-spring-load`. macOS ties the Accessibility grant
-to that signature rather than to one binary, so the grant is meant to survive
-rebuilds and updates. This has not been verified on a real update yet.
-
-The certificate's private key lives in its own keychain in
-`~/Library/Application Support/herdr-spring-load/signing`, never in your
-login keychain. The keychain is locked except while signing, and is on the
-keychain search list only during the signing call. Its password is in a file
-next to it, readable only by your user, because herdr runs the build step
-without a terminal and setup cannot ask you for it.
-
-This is a trade-off: a program already running as your user could use that
-key to sign itself as the helper and inherit its permissions. Avoiding that
-would mean a password prompt on every update, or a prebuilt binary signed
-with an Apple Developer ID.
-
 ## Test evidence
 
-Run on macOS 26 (Darwin 25.4) with herdr 0.9.3, Ghostty 1.3.1 and Python
-3.14, from the repository root:
+Run on macOS 26 (Darwin 25.4) with herdr 0.9.3 and Python 3.14, from the
+repository root:
 
 ```sh
 python3 -m unittest discover -s tests
 ```
 
-Result: 48 tests, 47 pass and 1 is skipped (the opt-in test below). They
-cover:
-
-- the Swift logic, compiled with `swiftc` and run without the watcher: dwell
-  timing, tab boxes, sidebar space spans, cell geometry, choosing the herdr
-  client to probe, probe backoff, the bounded command runner, and reading
-  the plugin list exactly as herdr 0.9.3 writes it;
-- the helper building and passing `--validate` without starting;
-- `probe.py` against fake herdr sockets (nonce, expiry, receiving client);
-- setup's config rewriting, conflict checks and `herdr config check`;
-- install, update, uninstall, `--purge`, self-removal and rollback in a
-  scratch HOME, with stubs for `launchctl`, `security`, `codesign`, `swiftc`
-  and herdr, including the build step run the way `herdr plugin install`
-  runs it.
+It covers the replica against golden screens recorded from herdr 0.9.3, cell
+geometry and calibration, click attribution from herdr's focus events, the
+one-client gate, dwell timing, the herdr API over Unix sockets and Windows
+named pipes, the sensor contract, the macOS sensor (built and run through
+its test hooks: client lookup through the process tree, tmux and the
+responsible process), and install, update, uninstall, self-removal, rollback
+and 0.2.0 migration in a scratch HOME with stubbed `launchctl`, `xcrun` and
+herdr. One test checks that no shipped file asks for a permission or injects
+input.
 
 ```sh
-HERDR_TEST_ISOLATED=1 python3 -m unittest discover -s tests -p test_isolated_herdr.py -v
+HERDR_TEST_ISOLATED=1 python3 -m unittest tests.test_isolated_herdr -v
 ```
 
-Result: pass. It starts a real herdr 0.9.3 server and client in a
-pseudo-terminal, with a throwaway HOME and config, and never touches a normal
-herdr session. In that client, the private probe key gets a probe reply; a
-click on a space name and then on a tab label switches that client; the
-private right-focus key focuses the destination pane; and a pasted file path
-lands in that pane.
+This starts a real herdr 0.9.3 server and client in a pseudo-terminal, with
+a throwaway HOME and config, and drives the core with a fake sensor. A click
+calibrates; then held drags open a Space, a tab and a pane through herdr's
+API, and the terminal's native drop still lands in that pane. With a second
+client attached, nothing happens.
 
 Not verified yet:
 
-- the macOS side: the helper running as a LaunchAgent, the Accessibility and
-  Automation prompts, and reading Ghostty through Accessibility;
-- Ghostty delivering the helper's AppleScript keys and clicks (the isolated
-  test writes the equivalent key and mouse sequences straight into the
-  terminal);
-- a real Finder drag from start to drop;
-- the real keychain and `codesign` path, and the Accessibility grant
-  surviving a rebuild;
+- a real Finder drag over a real terminal window, end to end;
+- that reading the drag pasteboard's change count never shows macOS's
+  pasteboard privacy prompt (it reads no contents, so it should not);
 - `herdr plugin install` from GitHub end to end.
-
-## Credits
-
-The cell geometry, pane layout parsing, tty size and Accessibility text-area
-lookup in `helper/FocusPaneVendor.swift` come from
-[herdr-focus-pane](https://github.com/walid-mos/herdr-focus-pane) by Walid
-Mostefaoui, MIT licensed. Its copyright and licence notice are kept in that
-file.
 
 ## Demo
 

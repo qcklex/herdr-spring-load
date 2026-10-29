@@ -1,5 +1,41 @@
 # Changelog
 
+## [0.3.0] - Unreleased
+
+Spring-loading with no OS permission, in any terminal. The helper now only
+observes, and selects through herdr's own API.
+
+### Added
+- A sensor per OS that observes the drag, the pointer, the window under it
+  and that window's herdr clients, and prints NDJSON (docs/SENSOR.md). The
+  macOS sensor asks for no permission. It finds herdr clients under the
+  terminal's own processes, inside tmux, and under the terminal's session
+  server (macOS's responsible process).
+- A shared core in standard-library Python: a replica of herdr 0.9.3's
+  sidebar, tab bar and pane layout (checked against golden screens, and
+  acting only on herdr versions it was checked against), calibration from
+  ordinary clicks and herdr's focus events, and herdr's public
+  `workspace.focus`, `tab.focus` and `pane.focus` as the only actions.
+- The core reaches herdr over its named pipe on Windows.
+- The status action reports which targets are off and why.
+
+### Changed
+- Navigation acts only when exactly one local client is attached to the
+  session; otherwise nothing happens and the status action says why.
+- Spaces and tabs need one ordinary click on a different tab or Space per
+  window size first. Panes work right away.
+- After a herdr config change, a click confirms which config a running
+  client shows.
+- Self-removal after `herdr plugin uninstall` needs two checks at least 3 s
+  apart and the registered checkout gone.
+
+### Removed
+- Accessibility and Automation use, AppleScript, key injection and
+  synthetic clicks.
+- The private probe actions and keybindings. Setup no longer edits the herdr
+  config; an install of 0.2.0 has its keybindings removed again.
+- The local signing keychain (deleted on upgrade).
+
 ## [0.2.0] - Unreleased
 
 This version replaces the plugin completely. herdr-spring-load is now
