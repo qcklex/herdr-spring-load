@@ -3,7 +3,7 @@ ARG HERDR_VERSION=0.9.3
 ARG HERDR_SHA256_aarch64=4de7aa3e25678812e92960de64f7c2aaa1bca1f0f80a3c5e559837e231e1f5c0
 ARG HERDR_SHA256_x86_64=18a8dc65f1c2fa485884344356dea1cfd911c6f06cf46fa78e193f4087f4dba7
 RUN apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
-      xvfb openbox xterm lxterminal xdotool x11-utils imagemagick procps curl ca-certificates \
+      xvfb openbox xterm lxterminal alacritty libgl1-mesa-dri libegl1 xdotool x11-utils imagemagick procps curl ca-certificates \
       python3 python3-gi gir1.2-gtk-3.0 libx11-6 libxfixes3 libxi6 dbus-x11 fonts-dejavu-core \
     && rm -rf /var/lib/apt/lists/*
 RUN arch=$(uname -m) && case "$arch" in aarch64) sum=$HERDR_SHA256_aarch64;; x86_64) sum=$HERDR_SHA256_x86_64;; esac \

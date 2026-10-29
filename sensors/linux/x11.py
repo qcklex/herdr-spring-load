@@ -373,7 +373,7 @@ def run(display_name=None):
         common.status('error', 'X11 sensor inert: %s' % error)
         return
     common.hello('linux-x11', 'x11-root', CAPABILITIES)
-    tracker = Tracker(backend.describe, backend.kind, common.emit)
+    tracker = Tracker(backend.describe, backend.kind, common.emit, common.all_herdr_clients)
     fd = backend.fileno()
     x = y = 0
     while True:

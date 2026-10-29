@@ -17,10 +17,11 @@ class Tracker:
     (X11: XdndSelection got an owner), 'lost' when the source went away
     without a release, and None otherwise."""
 
-    def __init__(self, describe, kind, emit):
+    def __init__(self, describe, kind, emit, everyone=None):
         self.describe = describe    # (x, y) -> window dict or None
         self.kind = kind            # () -> 'files' | 'other' | 'unknown'
         self.emit = emit
+        self.everyone = everyone    # () -> every herdr client of this user, or None
         self.dragging = False
         self.armed = False
         self.press = None
@@ -46,8 +47,10 @@ class Tracker:
             self.press = None
             self.throttle = MoveThrottle()
             self.throttle.due(None, at)
-            self.emit({'type': 'drag_start', 'x': x, 'y': y, 'kind': self.kind(),
-                       'window': self.describe(x, y)})
+            event = {'type': 'drag_start', 'x': x, 'y': y, 'kind': self.kind(), 'window': self.describe(x, y)}
+            if self.everyone:
+                event['all_clients'] = self.everyone()
+            self.emit(event)
         else:
             self.track_click(at, x, y, held)
         if not held:

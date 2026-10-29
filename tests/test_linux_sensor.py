@@ -61,6 +61,13 @@ class TrackerTest(unittest.TestCase):
         ok, message = contract.check_stream(stamped(self.events))
         self.assertTrue(ok, message)
 
+    def test_drag_start_carries_all_clients(self):
+        tracker = Tracker(lambda x, y: None, lambda: 'unknown', self.events.append, lambda: [CLIENT])
+        tracker.step(0.0, 1, 1, True, 'started')
+        self.assertEqual(self.events[0]['all_clients'], [CLIENT])
+        parsed = contract.parse_event(json.dumps({**self.events[0], 't': 1}))
+        self.assertEqual(parsed['all_clients'][0]['pid'], 41)
+
     def test_selection_owner_without_held_button_is_not_a_drag(self):
         self.tracker.step(0.0, 5, 5, False, 'started')
         self.tracker.step(0.1, 5, 5, True)              # a later press must not inherit the old owner
@@ -110,7 +117,7 @@ class FakeProc:
     def __init__(self, root):
         self.root = Path(root)
 
-    def add(self, pid, comm, ppid, pgrp=None, tty_nr=0, tpgid=-1, argv=(), exe=None):
+    def add(self, pid, comm, ppid, pgrp=None, tty_nr=0, tpgid=-1, argv=(), exe=None, environ=None):
         d = self.root/str(pid)
         (d/'fd').mkdir(parents=True)
         fields = ['S', ppid, pgrp or pid, pgrp or pid, tty_nr, tpgid] + [0] * 40
@@ -118,6 +125,8 @@ class FakeProc:
         (d/'cmdline').write_bytes(b''.join(a.encode() + b'\0' for a in argv))
         if exe:
             os.symlink(exe, d/'exe')
+        if environ is not None:
+            (d/'environ').write_bytes(b''.join(('%s=%s' % kv).encode() + b'\0' for kv in environ.items()))
 
 
 PTS = lambda n: (136 + n // 256) << 8 | (n % 256)
@@ -130,7 +139,8 @@ class ProcTest(unittest.TestCase):
         p = self.proc
         p.add(30, 'xterm', 1, argv=['xterm', '-e', 'herdr'])
         p.add(31, 'sh', 30, pgrp=31, tty_nr=PTS(3), tpgid=41, argv=['sh'])
-        p.add(41, 'herdr', 31, pgrp=41, tty_nr=PTS(3), tpgid=41, argv=['herdr'], exe='/usr/local/bin/herdr')
+        p.add(41, 'herdr', 31, pgrp=41, tty_nr=PTS(3), tpgid=41, argv=['herdr'], exe='/usr/local/bin/herdr',
+              environ={'HOME': '/home/t', 'HERDR_SESSION': 'work', 'SECRET_TOKEN': 'x', 'PATH': '/bin'})
         p.add(42, 'herdr', 41, pgrp=41, tty_nr=PTS(3), tpgid=41, argv=['herdr', 'plugin', 'x'])
         p.add(50, 'herdr', 1, argv=['herdr', 'server'])                     # no tty, not below xterm
         p.add(60, 'weird (name) x', 30, tty_nr=PTS(300), tpgid=99, argv=['/opt/herdr/herdr', '--session', 'w'])
@@ -147,13 +157,20 @@ class ProcTest(unittest.TestCase):
         found = {c['pid']: c for c in self.clients()}
         self.assertEqual(sorted(found), [41, 42, 60])
         self.assertEqual(found[41], {'pid': 41, 'argv': ['herdr'], 'tty': '/dev/pts/3', 'rows': 36, 'cols': 120,
-                                     'xpixel': 0, 'ypixel': 0, 'foreground': True})
+                                     'xpixel': 0, 'ypixel': 0, 'foreground': True,
+                                     'env': {'HOME': '/home/t', 'HERDR_SESSION': 'work'}})
+        self.assertIsNone(found[42]['env'])                             # unreadable environ: null
         self.assertEqual(found[42]['argv'], ['herdr', 'plugin', 'x'])   # reported, not classified
         self.assertEqual(found[60]['tty'], '/dev/pts/300')
         self.assertIsNone(found[60]['rows'])
         self.assertFalse(found[60]['foreground'])
         for client in found.values():
             contract.validate_client(client)
+
+    def test_all_clients_lists_every_herdr_with_a_tty_of_this_user(self):
+        everyone = common.all_herdr_clients(proc=self.tmp.name, size=lambda path: None)
+        self.assertEqual([c['pid'] for c in everyone], [41, 42, 60])
+        self.assertEqual(common.all_herdr_clients(proc=self.tmp.name, size=lambda path: None, uid=os.getuid() + 1), [])
 
     def test_unreadable_proc_gives_null(self):
         self.assertIsNone(common.herdr_clients(30, proc=self.tmp.name + '/missing'))

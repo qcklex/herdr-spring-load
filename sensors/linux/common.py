@@ -17,6 +17,9 @@ MOVE_MIN_INTERVAL = 0.030
 MOVE_MAX_INTERVAL = 0.250
 CLIENT_REFRESH = 1.0
 HERDR_NAMES = {'herdr', 'herdr.exe'}
+# Only these variables may leave a client's environment (docs/SENSOR.md, section 2.1).
+CLIENT_ENV = ('HERDR_SESSION', 'HERDR_SOCKET_PATH', 'HERDR_CLIENT_SOCKET_PATH', 'HERDR_CONFIG_PATH',
+              'XDG_CONFIG_HOME', 'XDG_STATE_HOME', 'HOME')
 
 _start = time.monotonic()
 _verbose = False
@@ -188,6 +191,40 @@ def winsize(path):
         os.close(fd)
 
 
+def read_env(pid, proc='/proc'):
+    """The allowed variables from /proc/<pid>/environ, or None when it cannot be read."""
+    try:
+        with open('%s/%d/environ' % (proc, pid), 'rb') as handle:
+            raw = handle.read()
+    except OSError:
+        return None
+    env = {}
+    for entry in raw.split(b'\0'):
+        key, sep, value = entry.partition(b'=')
+        name = key.decode('utf-8', 'replace')
+        if sep and name in CLIENT_ENV:
+            env[name] = value.decode('utf-8', 'replace')
+    return env
+
+
+def client_record(pid, stat, proc='/proc', size=winsize):
+    """The contract client object for a herdr process with a controlling tty, else None."""
+    comm, _, pgrp, tty_nr, tpgid = stat
+    if not tty_nr:
+        return None
+    argv = read_argv(pid, proc)
+    if exe_name(pid, comm, argv, proc) not in HERDR_NAMES:
+        return None
+    path = tty_path(tty_nr, proc, pid)
+    rows = cols = None
+    xpixel = ypixel = 0
+    dims = size(path) if path else None
+    if dims:
+        rows, cols, xpixel, ypixel = dims
+    return {'pid': pid, 'argv': argv, 'tty': path, 'rows': rows, 'cols': cols, 'xpixel': xpixel, 'ypixel': ypixel,
+            'foreground': (pgrp == tpgid) if tpgid > 0 else None, 'env': read_env(pid, proc)}
+
+
 def herdr_clients(owner_pid, proc='/proc', size=winsize):
     """Every herdr process with a controlling tty below owner_pid (docs/SENSOR.md, section 2.1).
 
@@ -198,25 +235,34 @@ def herdr_clients(owner_pid, proc='/proc', size=winsize):
     found, stack, seen = [], [owner_pid], set()
     while stack:
         parent = stack.pop()
-        for pid, (comm, _, pgrp, tty_nr, tpgid) in tree.get(parent, []):
+        for pid, stat in tree.get(parent, []):
             if pid in seen:
                 continue
             seen.add(pid)
             stack.append(pid)
-            if not tty_nr:
+            record = client_record(pid, stat, proc, size)
+            if record:
+                found.append(record)
+    found.sort(key=lambda client: client['pid'])
+    return found
+
+
+def all_herdr_clients(proc='/proc', size=winsize, uid=None):
+    """Every herdr client of this user on the machine, wherever its window is (drag_start.all_clients)."""
+    uid = os.getuid() if uid is None else uid
+    tree = children_map(proc)
+    if tree is None:
+        return None
+    found = []
+    for pid, stat in (entry for entries in tree.values() for entry in entries):
+        try:
+            if os.stat('%s/%d' % (proc, pid)).st_uid != uid:
                 continue
-            argv = read_argv(pid, proc)
-            if exe_name(pid, comm, argv, proc) not in HERDR_NAMES:
-                continue
-            path = tty_path(tty_nr, proc, pid)
-            rows = cols = None
-            xpixel = ypixel = 0
-            dims = size(path) if path else None
-            if dims:
-                rows, cols, xpixel, ypixel = dims
-            found.append({'pid': pid, 'argv': argv, 'tty': path, 'rows': rows, 'cols': cols,
-                          'xpixel': xpixel, 'ypixel': ypixel,
-                          'foreground': (pgrp == tpgid) if tpgid > 0 else None})
+        except OSError:
+            continue
+        record = client_record(pid, stat, proc, size)
+        if record:
+            found.append(record)
     found.sort(key=lambda client: client['pid'])
     return found
 
