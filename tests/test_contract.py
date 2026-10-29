@@ -42,6 +42,15 @@ class ContractTest(unittest.TestCase):
             self.assertIsNone(contract.parse_event(line), line[:80])
         self.assertIsNone(contract.parse_event('{"type":"future","t":1}'), 'unknown types are ignored')
 
+    def test_optional_env_and_all_clients(self):
+        client = {**CLIENT, 'env': {'HERDR_SESSION': 'work', 'SECRET_TOKEN': 'x'}}
+        event = contract.parse_event(json.dumps({'type': 'drag_start', 't': 1, 'x': 1, 'y': 2, 'kind': 'files',
+                                                 'window': None, 'all_clients': [client]}))
+        self.assertEqual(event['all_clients'][0]['env'], {'HERDR_SESSION': 'work'}, 'only the listed keys are kept')
+        plain = contract.parse_event(json.dumps({'type': 'drag_start', 't': 1, 'x': 1, 'y': 2, 'window': None}))
+        self.assertIsNone(plain['all_clients'])
+        self.assertIsNone(contract.parse_event(json.dumps({'type': 'drag_start', 't': 1, 'x': 1, 'y': 2, 'window': None, 'all_clients': {}})))
+
     def test_unknown_fields_are_ignored(self):
         event = contract.parse_event('{"type":"drag_end","t":1,"x":1,"y":2,"reason":"released","extra":5}')
         self.assertNotIn('extra', event)

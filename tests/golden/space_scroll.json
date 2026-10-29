@@ -1,0 +1,1913 @@
+{
+ "name": "space_scroll",
+ "herdr": "0.9.3",
+ "cols": 100,
+ "rows": 24,
+ "config": "onboarding = false\n[update]\nversion_check = false\nmanifest_check = false\n",
+ "socket": "$TEMP/c/herdr/herdr.sock",
+ "temp": "$TEMP",
+ "preferences": null,
+ "git_repos": [],
+ "snapshot": {
+  "version": "0.9.3",
+  "protocol": 22,
+  "focused_workspace_id": "w1",
+  "focused_tab_id": "w1:t1",
+  "focused_pane_id": "w1:p1",
+  "workspaces": [
+   {
+    "workspace_id": "w1",
+    "number": 1,
+    "label": "~",
+    "focused": true,
+    "pane_count": 1,
+    "tab_count": 1,
+    "active_tab_id": "w1:t1",
+    "agent_status": "unknown"
+   },
+   {
+    "workspace_id": "w2",
+    "number": 2,
+    "label": "space 0",
+    "focused": false,
+    "pane_count": 1,
+    "tab_count": 1,
+    "active_tab_id": "w2:t1",
+    "agent_status": "unknown"
+   },
+   {
+    "workspace_id": "w3",
+    "number": 3,
+    "label": "space 1",
+    "focused": false,
+    "pane_count": 1,
+    "tab_count": 1,
+    "active_tab_id": "w3:t1",
+    "agent_status": "unknown"
+   },
+   {
+    "workspace_id": "w4",
+    "number": 4,
+    "label": "space 2",
+    "focused": false,
+    "pane_count": 1,
+    "tab_count": 1,
+    "active_tab_id": "w4:t1",
+    "agent_status": "unknown"
+   },
+   {
+    "workspace_id": "w5",
+    "number": 5,
+    "label": "space 3",
+    "focused": false,
+    "pane_count": 1,
+    "tab_count": 1,
+    "active_tab_id": "w5:t1",
+    "agent_status": "unknown"
+   },
+   {
+    "workspace_id": "w6",
+    "number": 6,
+    "label": "space 4",
+    "focused": false,
+    "pane_count": 1,
+    "tab_count": 1,
+    "active_tab_id": "w6:t1",
+    "agent_status": "unknown"
+   },
+   {
+    "workspace_id": "w7",
+    "number": 7,
+    "label": "space 5",
+    "focused": false,
+    "pane_count": 1,
+    "tab_count": 1,
+    "active_tab_id": "w7:t1",
+    "agent_status": "unknown"
+   },
+   {
+    "workspace_id": "w8",
+    "number": 8,
+    "label": "space 6",
+    "focused": false,
+    "pane_count": 1,
+    "tab_count": 1,
+    "active_tab_id": "w8:t1",
+    "agent_status": "unknown"
+   },
+   {
+    "workspace_id": "w9",
+    "number": 9,
+    "label": "space 7",
+    "focused": false,
+    "pane_count": 1,
+    "tab_count": 1,
+    "active_tab_id": "w9:t1",
+    "agent_status": "unknown"
+   },
+   {
+    "workspace_id": "wA",
+    "number": 10,
+    "label": "space 8",
+    "focused": false,
+    "pane_count": 1,
+    "tab_count": 1,
+    "active_tab_id": "wA:t1",
+    "agent_status": "unknown"
+   },
+   {
+    "workspace_id": "wB",
+    "number": 11,
+    "label": "space 9",
+    "focused": false,
+    "pane_count": 1,
+    "tab_count": 1,
+    "active_tab_id": "wB:t1",
+    "agent_status": "unknown"
+   },
+   {
+    "workspace_id": "wC",
+    "number": 12,
+    "label": "space 10",
+    "focused": false,
+    "pane_count": 1,
+    "tab_count": 1,
+    "active_tab_id": "wC:t1",
+    "agent_status": "unknown"
+   },
+   {
+    "workspace_id": "wD",
+    "number": 13,
+    "label": "space 11",
+    "focused": false,
+    "pane_count": 1,
+    "tab_count": 1,
+    "active_tab_id": "wD:t1",
+    "agent_status": "unknown"
+   },
+   {
+    "workspace_id": "wE",
+    "number": 14,
+    "label": "space 12",
+    "focused": false,
+    "pane_count": 1,
+    "tab_count": 1,
+    "active_tab_id": "wE:t1",
+    "agent_status": "unknown"
+   },
+   {
+    "workspace_id": "wF",
+    "number": 15,
+    "label": "space 13",
+    "focused": false,
+    "pane_count": 1,
+    "tab_count": 1,
+    "active_tab_id": "wF:t1",
+    "agent_status": "unknown"
+   },
+   {
+    "workspace_id": "wG",
+    "number": 16,
+    "label": "space 14",
+    "focused": false,
+    "pane_count": 1,
+    "tab_count": 1,
+    "active_tab_id": "wG:t1",
+    "agent_status": "unknown"
+   },
+   {
+    "workspace_id": "wH",
+    "number": 17,
+    "label": "space 15",
+    "focused": false,
+    "pane_count": 1,
+    "tab_count": 1,
+    "active_tab_id": "wH:t1",
+    "agent_status": "unknown"
+   },
+   {
+    "workspace_id": "wJ",
+    "number": 18,
+    "label": "space 16",
+    "focused": false,
+    "pane_count": 1,
+    "tab_count": 1,
+    "active_tab_id": "wJ:t1",
+    "agent_status": "unknown"
+   },
+   {
+    "workspace_id": "wK",
+    "number": 19,
+    "label": "space 17",
+    "focused": false,
+    "pane_count": 1,
+    "tab_count": 1,
+    "active_tab_id": "wK:t1",
+    "agent_status": "unknown"
+   },
+   {
+    "workspace_id": "wM",
+    "number": 20,
+    "label": "space 18",
+    "focused": false,
+    "pane_count": 1,
+    "tab_count": 1,
+    "active_tab_id": "wM:t1",
+    "agent_status": "unknown"
+   },
+   {
+    "workspace_id": "wN",
+    "number": 21,
+    "label": "space 19",
+    "focused": false,
+    "pane_count": 1,
+    "tab_count": 1,
+    "active_tab_id": "wN:t1",
+    "agent_status": "unknown"
+   },
+   {
+    "workspace_id": "wP",
+    "number": 22,
+    "label": "space 20",
+    "focused": false,
+    "pane_count": 1,
+    "tab_count": 1,
+    "active_tab_id": "wP:t1",
+    "agent_status": "unknown"
+   },
+   {
+    "workspace_id": "wQ",
+    "number": 23,
+    "label": "space 21",
+    "focused": false,
+    "pane_count": 1,
+    "tab_count": 1,
+    "active_tab_id": "wQ:t1",
+    "agent_status": "unknown"
+   },
+   {
+    "workspace_id": "wR",
+    "number": 24,
+    "label": "space 22",
+    "focused": false,
+    "pane_count": 1,
+    "tab_count": 1,
+    "active_tab_id": "wR:t1",
+    "agent_status": "unknown"
+   },
+   {
+    "workspace_id": "wS",
+    "number": 25,
+    "label": "space 23",
+    "focused": false,
+    "pane_count": 1,
+    "tab_count": 1,
+    "active_tab_id": "wS:t1",
+    "agent_status": "unknown"
+   },
+   {
+    "workspace_id": "wT",
+    "number": 26,
+    "label": "space 24",
+    "focused": false,
+    "pane_count": 1,
+    "tab_count": 1,
+    "active_tab_id": "wT:t1",
+    "agent_status": "unknown"
+   },
+   {
+    "workspace_id": "wV",
+    "number": 27,
+    "label": "space 25",
+    "focused": false,
+    "pane_count": 1,
+    "tab_count": 1,
+    "active_tab_id": "wV:t1",
+    "agent_status": "unknown"
+   },
+   {
+    "workspace_id": "wW",
+    "number": 28,
+    "label": "space 26",
+    "focused": false,
+    "pane_count": 1,
+    "tab_count": 1,
+    "active_tab_id": "wW:t1",
+    "agent_status": "unknown"
+   },
+   {
+    "workspace_id": "wX",
+    "number": 29,
+    "label": "space 27",
+    "focused": false,
+    "pane_count": 1,
+    "tab_count": 1,
+    "active_tab_id": "wX:t1",
+    "agent_status": "unknown"
+   },
+   {
+    "workspace_id": "wY",
+    "number": 30,
+    "label": "space 28",
+    "focused": false,
+    "pane_count": 1,
+    "tab_count": 1,
+    "active_tab_id": "wY:t1",
+    "agent_status": "unknown"
+   },
+   {
+    "workspace_id": "wZ",
+    "number": 31,
+    "label": "space 29",
+    "focused": false,
+    "pane_count": 1,
+    "tab_count": 1,
+    "active_tab_id": "wZ:t1",
+    "agent_status": "unknown"
+   }
+  ],
+  "tabs": [
+   {
+    "tab_id": "w1:t1",
+    "workspace_id": "w1",
+    "number": 1,
+    "label": "1",
+    "focused": true,
+    "pane_count": 1,
+    "agent_status": "unknown"
+   },
+   {
+    "tab_id": "w2:t1",
+    "workspace_id": "w2",
+    "number": 1,
+    "label": "1",
+    "focused": false,
+    "pane_count": 1,
+    "agent_status": "unknown"
+   },
+   {
+    "tab_id": "w3:t1",
+    "workspace_id": "w3",
+    "number": 1,
+    "label": "1",
+    "focused": false,
+    "pane_count": 1,
+    "agent_status": "unknown"
+   },
+   {
+    "tab_id": "w4:t1",
+    "workspace_id": "w4",
+    "number": 1,
+    "label": "1",
+    "focused": false,
+    "pane_count": 1,
+    "agent_status": "unknown"
+   },
+   {
+    "tab_id": "w5:t1",
+    "workspace_id": "w5",
+    "number": 1,
+    "label": "1",
+    "focused": false,
+    "pane_count": 1,
+    "agent_status": "unknown"
+   },
+   {
+    "tab_id": "w6:t1",
+    "workspace_id": "w6",
+    "number": 1,
+    "label": "1",
+    "focused": false,
+    "pane_count": 1,
+    "agent_status": "unknown"
+   },
+   {
+    "tab_id": "w7:t1",
+    "workspace_id": "w7",
+    "number": 1,
+    "label": "1",
+    "focused": false,
+    "pane_count": 1,
+    "agent_status": "unknown"
+   },
+   {
+    "tab_id": "w8:t1",
+    "workspace_id": "w8",
+    "number": 1,
+    "label": "1",
+    "focused": false,
+    "pane_count": 1,
+    "agent_status": "unknown"
+   },
+   {
+    "tab_id": "w9:t1",
+    "workspace_id": "w9",
+    "number": 1,
+    "label": "1",
+    "focused": false,
+    "pane_count": 1,
+    "agent_status": "unknown"
+   },
+   {
+    "tab_id": "wA:t1",
+    "workspace_id": "wA",
+    "number": 1,
+    "label": "1",
+    "focused": false,
+    "pane_count": 1,
+    "agent_status": "unknown"
+   },
+   {
+    "tab_id": "wB:t1",
+    "workspace_id": "wB",
+    "number": 1,
+    "label": "1",
+    "focused": false,
+    "pane_count": 1,
+    "agent_status": "unknown"
+   },
+   {
+    "tab_id": "wC:t1",
+    "workspace_id": "wC",
+    "number": 1,
+    "label": "1",
+    "focused": false,
+    "pane_count": 1,
+    "agent_status": "unknown"
+   },
+   {
+    "tab_id": "wD:t1",
+    "workspace_id": "wD",
+    "number": 1,
+    "label": "1",
+    "focused": false,
+    "pane_count": 1,
+    "agent_status": "unknown"
+   },
+   {
+    "tab_id": "wE:t1",
+    "workspace_id": "wE",
+    "number": 1,
+    "label": "1",
+    "focused": false,
+    "pane_count": 1,
+    "agent_status": "unknown"
+   },
+   {
+    "tab_id": "wF:t1",
+    "workspace_id": "wF",
+    "number": 1,
+    "label": "1",
+    "focused": false,
+    "pane_count": 1,
+    "agent_status": "unknown"
+   },
+   {
+    "tab_id": "wG:t1",
+    "workspace_id": "wG",
+    "number": 1,
+    "label": "1",
+    "focused": false,
+    "pane_count": 1,
+    "agent_status": "unknown"
+   },
+   {
+    "tab_id": "wH:t1",
+    "workspace_id": "wH",
+    "number": 1,
+    "label": "1",
+    "focused": false,
+    "pane_count": 1,
+    "agent_status": "unknown"
+   },
+   {
+    "tab_id": "wJ:t1",
+    "workspace_id": "wJ",
+    "number": 1,
+    "label": "1",
+    "focused": false,
+    "pane_count": 1,
+    "agent_status": "unknown"
+   },
+   {
+    "tab_id": "wK:t1",
+    "workspace_id": "wK",
+    "number": 1,
+    "label": "1",
+    "focused": false,
+    "pane_count": 1,
+    "agent_status": "unknown"
+   },
+   {
+    "tab_id": "wM:t1",
+    "workspace_id": "wM",
+    "number": 1,
+    "label": "1",
+    "focused": false,
+    "pane_count": 1,
+    "agent_status": "unknown"
+   },
+   {
+    "tab_id": "wN:t1",
+    "workspace_id": "wN",
+    "number": 1,
+    "label": "1",
+    "focused": false,
+    "pane_count": 1,
+    "agent_status": "unknown"
+   },
+   {
+    "tab_id": "wP:t1",
+    "workspace_id": "wP",
+    "number": 1,
+    "label": "1",
+    "focused": false,
+    "pane_count": 1,
+    "agent_status": "unknown"
+   },
+   {
+    "tab_id": "wQ:t1",
+    "workspace_id": "wQ",
+    "number": 1,
+    "label": "1",
+    "focused": false,
+    "pane_count": 1,
+    "agent_status": "unknown"
+   },
+   {
+    "tab_id": "wR:t1",
+    "workspace_id": "wR",
+    "number": 1,
+    "label": "1",
+    "focused": false,
+    "pane_count": 1,
+    "agent_status": "unknown"
+   },
+   {
+    "tab_id": "wS:t1",
+    "workspace_id": "wS",
+    "number": 1,
+    "label": "1",
+    "focused": false,
+    "pane_count": 1,
+    "agent_status": "unknown"
+   },
+   {
+    "tab_id": "wT:t1",
+    "workspace_id": "wT",
+    "number": 1,
+    "label": "1",
+    "focused": false,
+    "pane_count": 1,
+    "agent_status": "unknown"
+   },
+   {
+    "tab_id": "wV:t1",
+    "workspace_id": "wV",
+    "number": 1,
+    "label": "1",
+    "focused": false,
+    "pane_count": 1,
+    "agent_status": "unknown"
+   },
+   {
+    "tab_id": "wW:t1",
+    "workspace_id": "wW",
+    "number": 1,
+    "label": "1",
+    "focused": false,
+    "pane_count": 1,
+    "agent_status": "unknown"
+   },
+   {
+    "tab_id": "wX:t1",
+    "workspace_id": "wX",
+    "number": 1,
+    "label": "1",
+    "focused": false,
+    "pane_count": 1,
+    "agent_status": "unknown"
+   },
+   {
+    "tab_id": "wY:t1",
+    "workspace_id": "wY",
+    "number": 1,
+    "label": "1",
+    "focused": false,
+    "pane_count": 1,
+    "agent_status": "unknown"
+   },
+   {
+    "tab_id": "wZ:t1",
+    "workspace_id": "wZ",
+    "number": 1,
+    "label": "1",
+    "focused": false,
+    "pane_count": 1,
+    "agent_status": "unknown"
+   }
+  ],
+  "panes": [
+   {
+    "pane_id": "w1:p1",
+    "terminal_id": "term_65ef327bc559b1",
+    "workspace_id": "w1",
+    "tab_id": "w1:t1",
+    "focused": true,
+    "cwd": "$TEMP/home",
+    "foreground_cwd": "$TEMP/home",
+    "agent_status": "unknown",
+    "scroll": {
+     "offset_from_bottom": 0,
+     "max_offset_from_bottom": 0,
+     "viewport_rows": 23
+    },
+    "revision": 0
+   },
+   {
+    "pane_id": "w2:p1",
+    "terminal_id": "term_65ef327c180512",
+    "workspace_id": "w2",
+    "tab_id": "w2:t1",
+    "focused": false,
+    "cwd": "$TEMP",
+    "foreground_cwd": "$TEMP",
+    "agent_status": "unknown",
+    "scroll": {
+     "offset_from_bottom": 0,
+     "max_offset_from_bottom": 0,
+     "viewport_rows": 23
+    },
+    "revision": 0
+   },
+   {
+    "pane_id": "w3:p1",
+    "terminal_id": "term_65ef327c1adf43",
+    "workspace_id": "w3",
+    "tab_id": "w3:t1",
+    "focused": false,
+    "cwd": "$TEMP",
+    "foreground_cwd": "$TEMP",
+    "agent_status": "unknown",
+    "scroll": {
+     "offset_from_bottom": 0,
+     "max_offset_from_bottom": 0,
+     "viewport_rows": 23
+    },
+    "revision": 0
+   },
+   {
+    "pane_id": "w4:p1",
+    "terminal_id": "term_65ef327c1c9844",
+    "workspace_id": "w4",
+    "tab_id": "w4:t1",
+    "focused": false,
+    "cwd": "$TEMP",
+    "foreground_cwd": "$TEMP",
+    "agent_status": "unknown",
+    "scroll": {
+     "offset_from_bottom": 0,
+     "max_offset_from_bottom": 0,
+     "viewport_rows": 23
+    },
+    "revision": 0
+   },
+   {
+    "pane_id": "w5:p1",
+    "terminal_id": "term_65ef327c1feb15",
+    "workspace_id": "w5",
+    "tab_id": "w5:t1",
+    "focused": false,
+    "cwd": "$TEMP",
+    "foreground_cwd": "$TEMP",
+    "agent_status": "unknown",
+    "scroll": {
+     "offset_from_bottom": 0,
+     "max_offset_from_bottom": 0,
+     "viewport_rows": 23
+    },
+    "revision": 0
+   },
+   {
+    "pane_id": "w6:p1",
+    "terminal_id": "term_65ef327c21c716",
+    "workspace_id": "w6",
+    "tab_id": "w6:t1",
+    "focused": false,
+    "cwd": "$TEMP",
+    "foreground_cwd": "$TEMP",
+    "agent_status": "unknown",
+    "scroll": {
+     "offset_from_bottom": 0,
+     "max_offset_from_bottom": 0,
+     "viewport_rows": 23
+    },
+    "revision": 0
+   },
+   {
+    "pane_id": "w7:p1",
+    "terminal_id": "term_65ef327c236897",
+    "workspace_id": "w7",
+    "tab_id": "w7:t1",
+    "focused": false,
+    "cwd": "$TEMP",
+    "foreground_cwd": "$TEMP",
+    "agent_status": "unknown",
+    "scroll": {
+     "offset_from_bottom": 0,
+     "max_offset_from_bottom": 0,
+     "viewport_rows": 23
+    },
+    "revision": 0
+   },
+   {
+    "pane_id": "w8:p1",
+    "terminal_id": "term_65ef327c24c718",
+    "workspace_id": "w8",
+    "tab_id": "w8:t1",
+    "focused": false,
+    "cwd": "$TEMP",
+    "foreground_cwd": "$TEMP",
+    "agent_status": "unknown",
+    "scroll": {
+     "offset_from_bottom": 0,
+     "max_offset_from_bottom": 0,
+     "viewport_rows": 23
+    },
+    "revision": 0
+   },
+   {
+    "pane_id": "w9:p1",
+    "terminal_id": "term_65ef327c25a709",
+    "workspace_id": "w9",
+    "tab_id": "w9:t1",
+    "focused": false,
+    "cwd": "$TEMP",
+    "foreground_cwd": "$TEMP",
+    "agent_status": "unknown",
+    "scroll": {
+     "offset_from_bottom": 0,
+     "max_offset_from_bottom": 0,
+     "viewport_rows": 23
+    },
+    "revision": 0
+   },
+   {
+    "pane_id": "wA:p1",
+    "terminal_id": "term_65ef327c26d3da",
+    "workspace_id": "wA",
+    "tab_id": "wA:t1",
+    "focused": false,
+    "cwd": "$TEMP",
+    "foreground_cwd": "$TEMP",
+    "agent_status": "unknown",
+    "scroll": {
+     "offset_from_bottom": 0,
+     "max_offset_from_bottom": 0,
+     "viewport_rows": 23
+    },
+    "revision": 0
+   },
+   {
+    "pane_id": "wB:p1",
+    "terminal_id": "term_65ef327c27f60b",
+    "workspace_id": "wB",
+    "tab_id": "wB:t1",
+    "focused": false,
+    "cwd": "$TEMP",
+    "foreground_cwd": "$TEMP",
+    "agent_status": "unknown",
+    "scroll": {
+     "offset_from_bottom": 0,
+     "max_offset_from_bottom": 0,
+     "viewport_rows": 23
+    },
+    "revision": 0
+   },
+   {
+    "pane_id": "wC:p1",
+    "terminal_id": "term_65ef327c2923ec",
+    "workspace_id": "wC",
+    "tab_id": "wC:t1",
+    "focused": false,
+    "cwd": "$TEMP",
+    "foreground_cwd": "$TEMP",
+    "agent_status": "unknown",
+    "scroll": {
+     "offset_from_bottom": 0,
+     "max_offset_from_bottom": 0,
+     "viewport_rows": 23
+    },
+    "revision": 0
+   },
+   {
+    "pane_id": "wD:p1",
+    "terminal_id": "term_65ef327c2a90ad",
+    "workspace_id": "wD",
+    "tab_id": "wD:t1",
+    "focused": false,
+    "cwd": "$TEMP",
+    "foreground_cwd": "$TEMP",
+    "agent_status": "unknown",
+    "scroll": {
+     "offset_from_bottom": 0,
+     "max_offset_from_bottom": 0,
+     "viewport_rows": 23
+    },
+    "revision": 0
+   },
+   {
+    "pane_id": "wE:p1",
+    "terminal_id": "term_65ef327c2b9b7e",
+    "workspace_id": "wE",
+    "tab_id": "wE:t1",
+    "focused": false,
+    "cwd": "$TEMP",
+    "foreground_cwd": "$TEMP",
+    "agent_status": "unknown",
+    "scroll": {
+     "offset_from_bottom": 0,
+     "max_offset_from_bottom": 0,
+     "viewport_rows": 23
+    },
+    "revision": 0
+   },
+   {
+    "pane_id": "wF:p1",
+    "terminal_id": "term_65ef327c2cc8ef",
+    "workspace_id": "wF",
+    "tab_id": "wF:t1",
+    "focused": false,
+    "cwd": "$TEMP",
+    "foreground_cwd": "$TEMP",
+    "agent_status": "unknown",
+    "scroll": {
+     "offset_from_bottom": 0,
+     "max_offset_from_bottom": 0,
+     "viewport_rows": 23
+    },
+    "revision": 0
+   },
+   {
+    "pane_id": "wG:p1",
+    "terminal_id": "term_65ef327c2e86c10",
+    "workspace_id": "wG",
+    "tab_id": "wG:t1",
+    "focused": false,
+    "cwd": "$TEMP",
+    "foreground_cwd": "$TEMP",
+    "agent_status": "unknown",
+    "scroll": {
+     "offset_from_bottom": 0,
+     "max_offset_from_bottom": 0,
+     "viewport_rows": 23
+    },
+    "revision": 0
+   },
+   {
+    "pane_id": "wH:p1",
+    "terminal_id": "term_65ef327c2ff1811",
+    "workspace_id": "wH",
+    "tab_id": "wH:t1",
+    "focused": false,
+    "cwd": "$TEMP",
+    "foreground_cwd": "$TEMP",
+    "agent_status": "unknown",
+    "scroll": {
+     "offset_from_bottom": 0,
+     "max_offset_from_bottom": 0,
+     "viewport_rows": 23
+    },
+    "revision": 0
+   },
+   {
+    "pane_id": "wJ:p1",
+    "terminal_id": "term_65ef327c32ac412",
+    "workspace_id": "wJ",
+    "tab_id": "wJ:t1",
+    "focused": false,
+    "cwd": "$TEMP",
+    "foreground_cwd": "$TEMP",
+    "agent_status": "unknown",
+    "scroll": {
+     "offset_from_bottom": 0,
+     "max_offset_from_bottom": 0,
+     "viewport_rows": 23
+    },
+    "revision": 0
+   },
+   {
+    "pane_id": "wK:p1",
+    "terminal_id": "term_65ef327c376f813",
+    "workspace_id": "wK",
+    "tab_id": "wK:t1",
+    "focused": false,
+    "cwd": "$TEMP",
+    "foreground_cwd": "$TEMP",
+    "agent_status": "unknown",
+    "scroll": {
+     "offset_from_bottom": 0,
+     "max_offset_from_bottom": 0,
+     "viewport_rows": 23
+    },
+    "revision": 0
+   },
+   {
+    "pane_id": "wM:p1",
+    "terminal_id": "term_65ef327c3b15b14",
+    "workspace_id": "wM",
+    "tab_id": "wM:t1",
+    "focused": false,
+    "cwd": "$TEMP",
+    "foreground_cwd": "$TEMP",
+    "agent_status": "unknown",
+    "scroll": {
+     "offset_from_bottom": 0,
+     "max_offset_from_bottom": 0,
+     "viewport_rows": 23
+    },
+    "revision": 0
+   },
+   {
+    "pane_id": "wN:p1",
+    "terminal_id": "term_65ef327c3d22b15",
+    "workspace_id": "wN",
+    "tab_id": "wN:t1",
+    "focused": false,
+    "cwd": "$TEMP",
+    "foreground_cwd": "$TEMP",
+    "agent_status": "unknown",
+    "scroll": {
+     "offset_from_bottom": 0,
+     "max_offset_from_bottom": 0,
+     "viewport_rows": 23
+    },
+    "revision": 0
+   },
+   {
+    "pane_id": "wP:p1",
+    "terminal_id": "term_65ef327c3f15916",
+    "workspace_id": "wP",
+    "tab_id": "wP:t1",
+    "focused": false,
+    "cwd": "$TEMP",
+    "foreground_cwd": "$TEMP",
+    "agent_status": "unknown",
+    "scroll": {
+     "offset_from_bottom": 0,
+     "max_offset_from_bottom": 0,
+     "viewport_rows": 23
+    },
+    "revision": 0
+   },
+   {
+    "pane_id": "wQ:p1",
+    "terminal_id": "term_65ef327c3ff5c17",
+    "workspace_id": "wQ",
+    "tab_id": "wQ:t1",
+    "focused": false,
+    "cwd": "$TEMP",
+    "foreground_cwd": "$TEMP",
+    "agent_status": "unknown",
+    "scroll": {
+     "offset_from_bottom": 0,
+     "max_offset_from_bottom": 0,
+     "viewport_rows": 23
+    },
+    "revision": 0
+   },
+   {
+    "pane_id": "wR:p1",
+    "terminal_id": "term_65ef327c40f8218",
+    "workspace_id": "wR",
+    "tab_id": "wR:t1",
+    "focused": false,
+    "cwd": "$TEMP",
+    "foreground_cwd": "$TEMP",
+    "agent_status": "unknown",
+    "scroll": {
+     "offset_from_bottom": 0,
+     "max_offset_from_bottom": 0,
+     "viewport_rows": 23
+    },
+    "revision": 0
+   },
+   {
+    "pane_id": "wS:p1",
+    "terminal_id": "term_65ef327c4230f19",
+    "workspace_id": "wS",
+    "tab_id": "wS:t1",
+    "focused": false,
+    "cwd": "$TEMP",
+    "foreground_cwd": "$TEMP",
+    "agent_status": "unknown",
+    "scroll": {
+     "offset_from_bottom": 0,
+     "max_offset_from_bottom": 0,
+     "viewport_rows": 23
+    },
+    "revision": 0
+   },
+   {
+    "pane_id": "wT:p1",
+    "terminal_id": "term_65ef327c43a5e1a",
+    "workspace_id": "wT",
+    "tab_id": "wT:t1",
+    "focused": false,
+    "cwd": "$TEMP",
+    "foreground_cwd": "$TEMP",
+    "agent_status": "unknown",
+    "scroll": {
+     "offset_from_bottom": 0,
+     "max_offset_from_bottom": 0,
+     "viewport_rows": 23
+    },
+    "revision": 0
+   },
+   {
+    "pane_id": "wV:p1",
+    "terminal_id": "term_65ef327c4520e1b",
+    "workspace_id": "wV",
+    "tab_id": "wV:t1",
+    "focused": false,
+    "cwd": "$TEMP",
+    "foreground_cwd": "$TEMP",
+    "agent_status": "unknown",
+    "scroll": {
+     "offset_from_bottom": 0,
+     "max_offset_from_bottom": 0,
+     "viewport_rows": 23
+    },
+    "revision": 0
+   },
+   {
+    "pane_id": "wW:p1",
+    "terminal_id": "term_65ef327c4627d1c",
+    "workspace_id": "wW",
+    "tab_id": "wW:t1",
+    "focused": false,
+    "cwd": "$TEMP",
+    "foreground_cwd": "$TEMP",
+    "agent_status": "unknown",
+    "scroll": {
+     "offset_from_bottom": 0,
+     "max_offset_from_bottom": 0,
+     "viewport_rows": 23
+    },
+    "revision": 0
+   },
+   {
+    "pane_id": "wX:p1",
+    "terminal_id": "term_65ef327c475811d",
+    "workspace_id": "wX",
+    "tab_id": "wX:t1",
+    "focused": false,
+    "cwd": "$TEMP",
+    "foreground_cwd": "$TEMP",
+    "agent_status": "unknown",
+    "scroll": {
+     "offset_from_bottom": 0,
+     "max_offset_from_bottom": 0,
+     "viewport_rows": 23
+    },
+    "revision": 0
+   },
+   {
+    "pane_id": "wY:p1",
+    "terminal_id": "term_65ef327c48d3b1e",
+    "workspace_id": "wY",
+    "tab_id": "wY:t1",
+    "focused": false,
+    "cwd": "$TEMP",
+    "foreground_cwd": "$TEMP",
+    "agent_status": "unknown",
+    "scroll": {
+     "offset_from_bottom": 0,
+     "max_offset_from_bottom": 0,
+     "viewport_rows": 23
+    },
+    "revision": 0
+   },
+   {
+    "pane_id": "wZ:p1",
+    "terminal_id": "term_65ef327c4a1441f",
+    "workspace_id": "wZ",
+    "tab_id": "wZ:t1",
+    "focused": false,
+    "cwd": "$TEMP",
+    "foreground_cwd": "$TEMP",
+    "agent_status": "unknown",
+    "scroll": {
+     "offset_from_bottom": 0,
+     "max_offset_from_bottom": 0,
+     "viewport_rows": 23
+    },
+    "revision": 0
+   }
+  ],
+  "layouts": [
+   {
+    "workspace_id": "w1",
+    "tab_id": "w1:t1",
+    "zoomed": false,
+    "area": {
+     "x": 0,
+     "y": 0,
+     "width": 74,
+     "height": 23
+    },
+    "focused_pane_id": "w1:p1",
+    "panes": [
+     {
+      "pane_id": "w1:p1",
+      "focused": true,
+      "rect": {
+       "x": 0,
+       "y": 0,
+       "width": 74,
+       "height": 23
+      }
+     }
+    ],
+    "splits": []
+   },
+   {
+    "workspace_id": "w2",
+    "tab_id": "w2:t1",
+    "zoomed": false,
+    "area": {
+     "x": 0,
+     "y": 0,
+     "width": 74,
+     "height": 23
+    },
+    "focused_pane_id": "w2:p1",
+    "panes": [
+     {
+      "pane_id": "w2:p1",
+      "focused": true,
+      "rect": {
+       "x": 0,
+       "y": 0,
+       "width": 74,
+       "height": 23
+      }
+     }
+    ],
+    "splits": []
+   },
+   {
+    "workspace_id": "w3",
+    "tab_id": "w3:t1",
+    "zoomed": false,
+    "area": {
+     "x": 0,
+     "y": 0,
+     "width": 74,
+     "height": 23
+    },
+    "focused_pane_id": "w3:p1",
+    "panes": [
+     {
+      "pane_id": "w3:p1",
+      "focused": true,
+      "rect": {
+       "x": 0,
+       "y": 0,
+       "width": 74,
+       "height": 23
+      }
+     }
+    ],
+    "splits": []
+   },
+   {
+    "workspace_id": "w4",
+    "tab_id": "w4:t1",
+    "zoomed": false,
+    "area": {
+     "x": 0,
+     "y": 0,
+     "width": 74,
+     "height": 23
+    },
+    "focused_pane_id": "w4:p1",
+    "panes": [
+     {
+      "pane_id": "w4:p1",
+      "focused": true,
+      "rect": {
+       "x": 0,
+       "y": 0,
+       "width": 74,
+       "height": 23
+      }
+     }
+    ],
+    "splits": []
+   },
+   {
+    "workspace_id": "w5",
+    "tab_id": "w5:t1",
+    "zoomed": false,
+    "area": {
+     "x": 0,
+     "y": 0,
+     "width": 74,
+     "height": 23
+    },
+    "focused_pane_id": "w5:p1",
+    "panes": [
+     {
+      "pane_id": "w5:p1",
+      "focused": true,
+      "rect": {
+       "x": 0,
+       "y": 0,
+       "width": 74,
+       "height": 23
+      }
+     }
+    ],
+    "splits": []
+   },
+   {
+    "workspace_id": "w6",
+    "tab_id": "w6:t1",
+    "zoomed": false,
+    "area": {
+     "x": 0,
+     "y": 0,
+     "width": 74,
+     "height": 23
+    },
+    "focused_pane_id": "w6:p1",
+    "panes": [
+     {
+      "pane_id": "w6:p1",
+      "focused": true,
+      "rect": {
+       "x": 0,
+       "y": 0,
+       "width": 74,
+       "height": 23
+      }
+     }
+    ],
+    "splits": []
+   },
+   {
+    "workspace_id": "w7",
+    "tab_id": "w7:t1",
+    "zoomed": false,
+    "area": {
+     "x": 0,
+     "y": 0,
+     "width": 74,
+     "height": 23
+    },
+    "focused_pane_id": "w7:p1",
+    "panes": [
+     {
+      "pane_id": "w7:p1",
+      "focused": true,
+      "rect": {
+       "x": 0,
+       "y": 0,
+       "width": 74,
+       "height": 23
+      }
+     }
+    ],
+    "splits": []
+   },
+   {
+    "workspace_id": "w8",
+    "tab_id": "w8:t1",
+    "zoomed": false,
+    "area": {
+     "x": 0,
+     "y": 0,
+     "width": 74,
+     "height": 23
+    },
+    "focused_pane_id": "w8:p1",
+    "panes": [
+     {
+      "pane_id": "w8:p1",
+      "focused": true,
+      "rect": {
+       "x": 0,
+       "y": 0,
+       "width": 74,
+       "height": 23
+      }
+     }
+    ],
+    "splits": []
+   },
+   {
+    "workspace_id": "w9",
+    "tab_id": "w9:t1",
+    "zoomed": false,
+    "area": {
+     "x": 0,
+     "y": 0,
+     "width": 74,
+     "height": 23
+    },
+    "focused_pane_id": "w9:p1",
+    "panes": [
+     {
+      "pane_id": "w9:p1",
+      "focused": true,
+      "rect": {
+       "x": 0,
+       "y": 0,
+       "width": 74,
+       "height": 23
+      }
+     }
+    ],
+    "splits": []
+   },
+   {
+    "workspace_id": "wA",
+    "tab_id": "wA:t1",
+    "zoomed": false,
+    "area": {
+     "x": 0,
+     "y": 0,
+     "width": 74,
+     "height": 23
+    },
+    "focused_pane_id": "wA:p1",
+    "panes": [
+     {
+      "pane_id": "wA:p1",
+      "focused": true,
+      "rect": {
+       "x": 0,
+       "y": 0,
+       "width": 74,
+       "height": 23
+      }
+     }
+    ],
+    "splits": []
+   },
+   {
+    "workspace_id": "wB",
+    "tab_id": "wB:t1",
+    "zoomed": false,
+    "area": {
+     "x": 0,
+     "y": 0,
+     "width": 74,
+     "height": 23
+    },
+    "focused_pane_id": "wB:p1",
+    "panes": [
+     {
+      "pane_id": "wB:p1",
+      "focused": true,
+      "rect": {
+       "x": 0,
+       "y": 0,
+       "width": 74,
+       "height": 23
+      }
+     }
+    ],
+    "splits": []
+   },
+   {
+    "workspace_id": "wC",
+    "tab_id": "wC:t1",
+    "zoomed": false,
+    "area": {
+     "x": 0,
+     "y": 0,
+     "width": 74,
+     "height": 23
+    },
+    "focused_pane_id": "wC:p1",
+    "panes": [
+     {
+      "pane_id": "wC:p1",
+      "focused": true,
+      "rect": {
+       "x": 0,
+       "y": 0,
+       "width": 74,
+       "height": 23
+      }
+     }
+    ],
+    "splits": []
+   },
+   {
+    "workspace_id": "wD",
+    "tab_id": "wD:t1",
+    "zoomed": false,
+    "area": {
+     "x": 0,
+     "y": 0,
+     "width": 74,
+     "height": 23
+    },
+    "focused_pane_id": "wD:p1",
+    "panes": [
+     {
+      "pane_id": "wD:p1",
+      "focused": true,
+      "rect": {
+       "x": 0,
+       "y": 0,
+       "width": 74,
+       "height": 23
+      }
+     }
+    ],
+    "splits": []
+   },
+   {
+    "workspace_id": "wE",
+    "tab_id": "wE:t1",
+    "zoomed": false,
+    "area": {
+     "x": 0,
+     "y": 0,
+     "width": 74,
+     "height": 23
+    },
+    "focused_pane_id": "wE:p1",
+    "panes": [
+     {
+      "pane_id": "wE:p1",
+      "focused": true,
+      "rect": {
+       "x": 0,
+       "y": 0,
+       "width": 74,
+       "height": 23
+      }
+     }
+    ],
+    "splits": []
+   },
+   {
+    "workspace_id": "wF",
+    "tab_id": "wF:t1",
+    "zoomed": false,
+    "area": {
+     "x": 0,
+     "y": 0,
+     "width": 74,
+     "height": 23
+    },
+    "focused_pane_id": "wF:p1",
+    "panes": [
+     {
+      "pane_id": "wF:p1",
+      "focused": true,
+      "rect": {
+       "x": 0,
+       "y": 0,
+       "width": 74,
+       "height": 23
+      }
+     }
+    ],
+    "splits": []
+   },
+   {
+    "workspace_id": "wG",
+    "tab_id": "wG:t1",
+    "zoomed": false,
+    "area": {
+     "x": 0,
+     "y": 0,
+     "width": 74,
+     "height": 23
+    },
+    "focused_pane_id": "wG:p1",
+    "panes": [
+     {
+      "pane_id": "wG:p1",
+      "focused": true,
+      "rect": {
+       "x": 0,
+       "y": 0,
+       "width": 74,
+       "height": 23
+      }
+     }
+    ],
+    "splits": []
+   },
+   {
+    "workspace_id": "wH",
+    "tab_id": "wH:t1",
+    "zoomed": false,
+    "area": {
+     "x": 0,
+     "y": 0,
+     "width": 74,
+     "height": 23
+    },
+    "focused_pane_id": "wH:p1",
+    "panes": [
+     {
+      "pane_id": "wH:p1",
+      "focused": true,
+      "rect": {
+       "x": 0,
+       "y": 0,
+       "width": 74,
+       "height": 23
+      }
+     }
+    ],
+    "splits": []
+   },
+   {
+    "workspace_id": "wJ",
+    "tab_id": "wJ:t1",
+    "zoomed": false,
+    "area": {
+     "x": 0,
+     "y": 0,
+     "width": 74,
+     "height": 23
+    },
+    "focused_pane_id": "wJ:p1",
+    "panes": [
+     {
+      "pane_id": "wJ:p1",
+      "focused": true,
+      "rect": {
+       "x": 0,
+       "y": 0,
+       "width": 74,
+       "height": 23
+      }
+     }
+    ],
+    "splits": []
+   },
+   {
+    "workspace_id": "wK",
+    "tab_id": "wK:t1",
+    "zoomed": false,
+    "area": {
+     "x": 0,
+     "y": 0,
+     "width": 74,
+     "height": 23
+    },
+    "focused_pane_id": "wK:p1",
+    "panes": [
+     {
+      "pane_id": "wK:p1",
+      "focused": true,
+      "rect": {
+       "x": 0,
+       "y": 0,
+       "width": 74,
+       "height": 23
+      }
+     }
+    ],
+    "splits": []
+   },
+   {
+    "workspace_id": "wM",
+    "tab_id": "wM:t1",
+    "zoomed": false,
+    "area": {
+     "x": 0,
+     "y": 0,
+     "width": 74,
+     "height": 23
+    },
+    "focused_pane_id": "wM:p1",
+    "panes": [
+     {
+      "pane_id": "wM:p1",
+      "focused": true,
+      "rect": {
+       "x": 0,
+       "y": 0,
+       "width": 74,
+       "height": 23
+      }
+     }
+    ],
+    "splits": []
+   },
+   {
+    "workspace_id": "wN",
+    "tab_id": "wN:t1",
+    "zoomed": false,
+    "area": {
+     "x": 0,
+     "y": 0,
+     "width": 74,
+     "height": 23
+    },
+    "focused_pane_id": "wN:p1",
+    "panes": [
+     {
+      "pane_id": "wN:p1",
+      "focused": true,
+      "rect": {
+       "x": 0,
+       "y": 0,
+       "width": 74,
+       "height": 23
+      }
+     }
+    ],
+    "splits": []
+   },
+   {
+    "workspace_id": "wP",
+    "tab_id": "wP:t1",
+    "zoomed": false,
+    "area": {
+     "x": 0,
+     "y": 0,
+     "width": 74,
+     "height": 23
+    },
+    "focused_pane_id": "wP:p1",
+    "panes": [
+     {
+      "pane_id": "wP:p1",
+      "focused": true,
+      "rect": {
+       "x": 0,
+       "y": 0,
+       "width": 74,
+       "height": 23
+      }
+     }
+    ],
+    "splits": []
+   },
+   {
+    "workspace_id": "wQ",
+    "tab_id": "wQ:t1",
+    "zoomed": false,
+    "area": {
+     "x": 0,
+     "y": 0,
+     "width": 74,
+     "height": 23
+    },
+    "focused_pane_id": "wQ:p1",
+    "panes": [
+     {
+      "pane_id": "wQ:p1",
+      "focused": true,
+      "rect": {
+       "x": 0,
+       "y": 0,
+       "width": 74,
+       "height": 23
+      }
+     }
+    ],
+    "splits": []
+   },
+   {
+    "workspace_id": "wR",
+    "tab_id": "wR:t1",
+    "zoomed": false,
+    "area": {
+     "x": 0,
+     "y": 0,
+     "width": 74,
+     "height": 23
+    },
+    "focused_pane_id": "wR:p1",
+    "panes": [
+     {
+      "pane_id": "wR:p1",
+      "focused": true,
+      "rect": {
+       "x": 0,
+       "y": 0,
+       "width": 74,
+       "height": 23
+      }
+     }
+    ],
+    "splits": []
+   },
+   {
+    "workspace_id": "wS",
+    "tab_id": "wS:t1",
+    "zoomed": false,
+    "area": {
+     "x": 0,
+     "y": 0,
+     "width": 74,
+     "height": 23
+    },
+    "focused_pane_id": "wS:p1",
+    "panes": [
+     {
+      "pane_id": "wS:p1",
+      "focused": true,
+      "rect": {
+       "x": 0,
+       "y": 0,
+       "width": 74,
+       "height": 23
+      }
+     }
+    ],
+    "splits": []
+   },
+   {
+    "workspace_id": "wT",
+    "tab_id": "wT:t1",
+    "zoomed": false,
+    "area": {
+     "x": 0,
+     "y": 0,
+     "width": 74,
+     "height": 23
+    },
+    "focused_pane_id": "wT:p1",
+    "panes": [
+     {
+      "pane_id": "wT:p1",
+      "focused": true,
+      "rect": {
+       "x": 0,
+       "y": 0,
+       "width": 74,
+       "height": 23
+      }
+     }
+    ],
+    "splits": []
+   },
+   {
+    "workspace_id": "wV",
+    "tab_id": "wV:t1",
+    "zoomed": false,
+    "area": {
+     "x": 0,
+     "y": 0,
+     "width": 74,
+     "height": 23
+    },
+    "focused_pane_id": "wV:p1",
+    "panes": [
+     {
+      "pane_id": "wV:p1",
+      "focused": true,
+      "rect": {
+       "x": 0,
+       "y": 0,
+       "width": 74,
+       "height": 23
+      }
+     }
+    ],
+    "splits": []
+   },
+   {
+    "workspace_id": "wW",
+    "tab_id": "wW:t1",
+    "zoomed": false,
+    "area": {
+     "x": 0,
+     "y": 0,
+     "width": 74,
+     "height": 23
+    },
+    "focused_pane_id": "wW:p1",
+    "panes": [
+     {
+      "pane_id": "wW:p1",
+      "focused": true,
+      "rect": {
+       "x": 0,
+       "y": 0,
+       "width": 74,
+       "height": 23
+      }
+     }
+    ],
+    "splits": []
+   },
+   {
+    "workspace_id": "wX",
+    "tab_id": "wX:t1",
+    "zoomed": false,
+    "area": {
+     "x": 0,
+     "y": 0,
+     "width": 74,
+     "height": 23
+    },
+    "focused_pane_id": "wX:p1",
+    "panes": [
+     {
+      "pane_id": "wX:p1",
+      "focused": true,
+      "rect": {
+       "x": 0,
+       "y": 0,
+       "width": 74,
+       "height": 23
+      }
+     }
+    ],
+    "splits": []
+   },
+   {
+    "workspace_id": "wY",
+    "tab_id": "wY:t1",
+    "zoomed": false,
+    "area": {
+     "x": 0,
+     "y": 0,
+     "width": 74,
+     "height": 23
+    },
+    "focused_pane_id": "wY:p1",
+    "panes": [
+     {
+      "pane_id": "wY:p1",
+      "focused": true,
+      "rect": {
+       "x": 0,
+       "y": 0,
+       "width": 74,
+       "height": 23
+      }
+     }
+    ],
+    "splits": []
+   },
+   {
+    "workspace_id": "wZ",
+    "tab_id": "wZ:t1",
+    "zoomed": false,
+    "area": {
+     "x": 0,
+     "y": 0,
+     "width": 74,
+     "height": 23
+    },
+    "focused_pane_id": "wZ:p1",
+    "panes": [
+     {
+      "pane_id": "wZ:p1",
+      "focused": true,
+      "rect": {
+       "x": 0,
+       "y": 0,
+       "width": 74,
+       "height": 23
+      }
+     }
+    ],
+    "splits": []
+   }
+  ],
+  "agents": []
+ },
+ "screen": [
+  " spaces                  │   1      +                                                               ",
+  "                         │$                                                                         ",
+  " · ~                    ▕│                                                                          ",
+  " · space 0              ▕│                                                                          ",
+  " · space 1              ▕│                                                                          ",
+  " · space 2              ▕│                                                                          ",
+  " · space 3              ▕│                                                                          ",
+  " · space 4              ▕│                                                                          ",
+  " · space 5              ▕│                                                                          ",
+  " · space 6              ▕│                                                                          ",
+  " · space 7              ▕│                                                                          ",
+  " new                 menu│                                                                          ",
+  "─────────────────────────│                                                                          ",
+  " agents           grouped│                                                                          ",
+  "                         │                                                                          ",
+  "                         │                                                                          ",
+  "                         │                                                                          ",
+  "                         │                                                                          ",
+  "                         │                                                                          ",
+  "                         │                                                                          ",
+  "                         │                                                                          ",
+  "                         │                                                                          ",
+  "                         │                                                                          ",
+  "                        «│                                                                          "
+ ]
+}

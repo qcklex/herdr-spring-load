@@ -1,0 +1,819 @@
+{
+ "name": "tab_overflow",
+ "herdr": "0.9.3",
+ "cols": 100,
+ "rows": 30,
+ "config": "onboarding = false\n[update]\nversion_check = false\nmanifest_check = false\n",
+ "socket": "$TEMP/c/herdr/herdr.sock",
+ "temp": "$TEMP",
+ "preferences": null,
+ "git_repos": [],
+ "snapshot": {
+  "version": "0.9.3",
+  "protocol": 22,
+  "focused_workspace_id": "w1",
+  "focused_tab_id": "w1:t1",
+  "focused_pane_id": "w1:p1",
+  "workspaces": [
+   {
+    "workspace_id": "w1",
+    "number": 1,
+    "label": "~",
+    "focused": true,
+    "pane_count": 15,
+    "tab_count": 15,
+    "active_tab_id": "w1:t1",
+    "agent_status": "unknown"
+   }
+  ],
+  "tabs": [
+   {
+    "tab_id": "w1:t1",
+    "workspace_id": "w1",
+    "number": 1,
+    "label": "1",
+    "focused": true,
+    "pane_count": 1,
+    "agent_status": "unknown"
+   },
+   {
+    "tab_id": "w1:t2",
+    "workspace_id": "w1",
+    "number": 2,
+    "label": "tab number 0",
+    "focused": false,
+    "pane_count": 1,
+    "agent_status": "unknown"
+   },
+   {
+    "tab_id": "w1:t3",
+    "workspace_id": "w1",
+    "number": 3,
+    "label": "tab number 1",
+    "focused": false,
+    "pane_count": 1,
+    "agent_status": "unknown"
+   },
+   {
+    "tab_id": "w1:t4",
+    "workspace_id": "w1",
+    "number": 4,
+    "label": "tab number 2",
+    "focused": false,
+    "pane_count": 1,
+    "agent_status": "unknown"
+   },
+   {
+    "tab_id": "w1:t5",
+    "workspace_id": "w1",
+    "number": 5,
+    "label": "tab number 3",
+    "focused": false,
+    "pane_count": 1,
+    "agent_status": "unknown"
+   },
+   {
+    "tab_id": "w1:t6",
+    "workspace_id": "w1",
+    "number": 6,
+    "label": "tab number 4",
+    "focused": false,
+    "pane_count": 1,
+    "agent_status": "unknown"
+   },
+   {
+    "tab_id": "w1:t7",
+    "workspace_id": "w1",
+    "number": 7,
+    "label": "tab number 5",
+    "focused": false,
+    "pane_count": 1,
+    "agent_status": "unknown"
+   },
+   {
+    "tab_id": "w1:t8",
+    "workspace_id": "w1",
+    "number": 8,
+    "label": "tab number 6",
+    "focused": false,
+    "pane_count": 1,
+    "agent_status": "unknown"
+   },
+   {
+    "tab_id": "w1:t9",
+    "workspace_id": "w1",
+    "number": 9,
+    "label": "tab number 7",
+    "focused": false,
+    "pane_count": 1,
+    "agent_status": "unknown"
+   },
+   {
+    "tab_id": "w1:tA",
+    "workspace_id": "w1",
+    "number": 10,
+    "label": "tab number 8",
+    "focused": false,
+    "pane_count": 1,
+    "agent_status": "unknown"
+   },
+   {
+    "tab_id": "w1:tB",
+    "workspace_id": "w1",
+    "number": 11,
+    "label": "tab number 9",
+    "focused": false,
+    "pane_count": 1,
+    "agent_status": "unknown"
+   },
+   {
+    "tab_id": "w1:tC",
+    "workspace_id": "w1",
+    "number": 12,
+    "label": "tab number 10",
+    "focused": false,
+    "pane_count": 1,
+    "agent_status": "unknown"
+   },
+   {
+    "tab_id": "w1:tD",
+    "workspace_id": "w1",
+    "number": 13,
+    "label": "tab number 11",
+    "focused": false,
+    "pane_count": 1,
+    "agent_status": "unknown"
+   },
+   {
+    "tab_id": "w1:tE",
+    "workspace_id": "w1",
+    "number": 14,
+    "label": "tab number 12",
+    "focused": false,
+    "pane_count": 1,
+    "agent_status": "unknown"
+   },
+   {
+    "tab_id": "w1:tF",
+    "workspace_id": "w1",
+    "number": 15,
+    "label": "tab number 13",
+    "focused": false,
+    "pane_count": 1,
+    "agent_status": "unknown"
+   }
+  ],
+  "panes": [
+   {
+    "pane_id": "w1:p1",
+    "terminal_id": "term_65ef3279cf9f21",
+    "workspace_id": "w1",
+    "tab_id": "w1:t1",
+    "focused": true,
+    "cwd": "$TEMP/home",
+    "foreground_cwd": "$TEMP/home",
+    "agent_status": "unknown",
+    "scroll": {
+     "offset_from_bottom": 0,
+     "max_offset_from_bottom": 0,
+     "viewport_rows": 29
+    },
+    "revision": 0
+   },
+   {
+    "pane_id": "w1:p2",
+    "terminal_id": "term_65ef327a38d332",
+    "workspace_id": "w1",
+    "tab_id": "w1:t2",
+    "focused": false,
+    "cwd": "$TEMP",
+    "foreground_cwd": "$TEMP",
+    "agent_status": "unknown",
+    "scroll": {
+     "offset_from_bottom": 0,
+     "max_offset_from_bottom": 0,
+     "viewport_rows": 29
+    },
+    "revision": 0
+   },
+   {
+    "pane_id": "w1:p3",
+    "terminal_id": "term_65ef327a3abe23",
+    "workspace_id": "w1",
+    "tab_id": "w1:t3",
+    "focused": false,
+    "cwd": "$TEMP",
+    "foreground_cwd": "$TEMP",
+    "agent_status": "unknown",
+    "scroll": {
+     "offset_from_bottom": 0,
+     "max_offset_from_bottom": 0,
+     "viewport_rows": 29
+    },
+    "revision": 0
+   },
+   {
+    "pane_id": "w1:p4",
+    "terminal_id": "term_65ef327a3cc964",
+    "workspace_id": "w1",
+    "tab_id": "w1:t4",
+    "focused": false,
+    "cwd": "$TEMP",
+    "foreground_cwd": "$TEMP",
+    "agent_status": "unknown",
+    "scroll": {
+     "offset_from_bottom": 0,
+     "max_offset_from_bottom": 0,
+     "viewport_rows": 29
+    },
+    "revision": 0
+   },
+   {
+    "pane_id": "w1:p5",
+    "terminal_id": "term_65ef327a3f0d25",
+    "workspace_id": "w1",
+    "tab_id": "w1:t5",
+    "focused": false,
+    "cwd": "$TEMP",
+    "foreground_cwd": "$TEMP",
+    "agent_status": "unknown",
+    "scroll": {
+     "offset_from_bottom": 0,
+     "max_offset_from_bottom": 0,
+     "viewport_rows": 29
+    },
+    "revision": 0
+   },
+   {
+    "pane_id": "w1:p6",
+    "terminal_id": "term_65ef327a40cc96",
+    "workspace_id": "w1",
+    "tab_id": "w1:t6",
+    "focused": false,
+    "cwd": "$TEMP",
+    "foreground_cwd": "$TEMP",
+    "agent_status": "unknown",
+    "scroll": {
+     "offset_from_bottom": 0,
+     "max_offset_from_bottom": 0,
+     "viewport_rows": 29
+    },
+    "revision": 0
+   },
+   {
+    "pane_id": "w1:p7",
+    "terminal_id": "term_65ef327a431ca7",
+    "workspace_id": "w1",
+    "tab_id": "w1:t7",
+    "focused": false,
+    "cwd": "$TEMP",
+    "foreground_cwd": "$TEMP",
+    "agent_status": "unknown",
+    "scroll": {
+     "offset_from_bottom": 0,
+     "max_offset_from_bottom": 0,
+     "viewport_rows": 29
+    },
+    "revision": 0
+   },
+   {
+    "pane_id": "w1:p8",
+    "terminal_id": "term_65ef327a450638",
+    "workspace_id": "w1",
+    "tab_id": "w1:t8",
+    "focused": false,
+    "cwd": "$TEMP",
+    "foreground_cwd": "$TEMP",
+    "agent_status": "unknown",
+    "scroll": {
+     "offset_from_bottom": 0,
+     "max_offset_from_bottom": 0,
+     "viewport_rows": 29
+    },
+    "revision": 0
+   },
+   {
+    "pane_id": "w1:p9",
+    "terminal_id": "term_65ef327a484c29",
+    "workspace_id": "w1",
+    "tab_id": "w1:t9",
+    "focused": false,
+    "cwd": "$TEMP",
+    "foreground_cwd": "$TEMP",
+    "agent_status": "unknown",
+    "scroll": {
+     "offset_from_bottom": 0,
+     "max_offset_from_bottom": 0,
+     "viewport_rows": 29
+    },
+    "revision": 0
+   },
+   {
+    "pane_id": "w1:pA",
+    "terminal_id": "term_65ef327a4cc95a",
+    "workspace_id": "w1",
+    "tab_id": "w1:tA",
+    "focused": false,
+    "cwd": "$TEMP",
+    "foreground_cwd": "$TEMP",
+    "agent_status": "unknown",
+    "scroll": {
+     "offset_from_bottom": 0,
+     "max_offset_from_bottom": 0,
+     "viewport_rows": 29
+    },
+    "revision": 0
+   },
+   {
+    "pane_id": "w1:pB",
+    "terminal_id": "term_65ef327a4e651b",
+    "workspace_id": "w1",
+    "tab_id": "w1:tB",
+    "focused": false,
+    "cwd": "$TEMP",
+    "foreground_cwd": "$TEMP",
+    "agent_status": "unknown",
+    "scroll": {
+     "offset_from_bottom": 0,
+     "max_offset_from_bottom": 0,
+     "viewport_rows": 29
+    },
+    "revision": 0
+   },
+   {
+    "pane_id": "w1:pC",
+    "terminal_id": "term_65ef327a4f9c1c",
+    "workspace_id": "w1",
+    "tab_id": "w1:tC",
+    "focused": false,
+    "cwd": "$TEMP",
+    "foreground_cwd": "$TEMP",
+    "agent_status": "unknown",
+    "scroll": {
+     "offset_from_bottom": 0,
+     "max_offset_from_bottom": 0,
+     "viewport_rows": 29
+    },
+    "revision": 0
+   },
+   {
+    "pane_id": "w1:pD",
+    "terminal_id": "term_65ef327a50b47d",
+    "workspace_id": "w1",
+    "tab_id": "w1:tD",
+    "focused": false,
+    "cwd": "$TEMP",
+    "foreground_cwd": "$TEMP",
+    "agent_status": "unknown",
+    "scroll": {
+     "offset_from_bottom": 0,
+     "max_offset_from_bottom": 0,
+     "viewport_rows": 29
+    },
+    "revision": 0
+   },
+   {
+    "pane_id": "w1:pE",
+    "terminal_id": "term_65ef327a51cfce",
+    "workspace_id": "w1",
+    "tab_id": "w1:tE",
+    "focused": false,
+    "cwd": "$TEMP",
+    "foreground_cwd": "$TEMP",
+    "agent_status": "unknown",
+    "scroll": {
+     "offset_from_bottom": 0,
+     "max_offset_from_bottom": 0,
+     "viewport_rows": 29
+    },
+    "revision": 0
+   },
+   {
+    "pane_id": "w1:pF",
+    "terminal_id": "term_65ef327a5303bf",
+    "workspace_id": "w1",
+    "tab_id": "w1:tF",
+    "focused": false,
+    "cwd": "$TEMP",
+    "foreground_cwd": "$TEMP",
+    "agent_status": "unknown",
+    "scroll": {
+     "offset_from_bottom": 0,
+     "max_offset_from_bottom": 0,
+     "viewport_rows": 29
+    },
+    "revision": 0
+   }
+  ],
+  "layouts": [
+   {
+    "workspace_id": "w1",
+    "tab_id": "w1:t1",
+    "zoomed": false,
+    "area": {
+     "x": 0,
+     "y": 0,
+     "width": 74,
+     "height": 29
+    },
+    "focused_pane_id": "w1:p1",
+    "panes": [
+     {
+      "pane_id": "w1:p1",
+      "focused": true,
+      "rect": {
+       "x": 0,
+       "y": 0,
+       "width": 74,
+       "height": 29
+      }
+     }
+    ],
+    "splits": []
+   },
+   {
+    "workspace_id": "w1",
+    "tab_id": "w1:t2",
+    "zoomed": false,
+    "area": {
+     "x": 0,
+     "y": 0,
+     "width": 74,
+     "height": 29
+    },
+    "focused_pane_id": "w1:p2",
+    "panes": [
+     {
+      "pane_id": "w1:p2",
+      "focused": true,
+      "rect": {
+       "x": 0,
+       "y": 0,
+       "width": 74,
+       "height": 29
+      }
+     }
+    ],
+    "splits": []
+   },
+   {
+    "workspace_id": "w1",
+    "tab_id": "w1:t3",
+    "zoomed": false,
+    "area": {
+     "x": 0,
+     "y": 0,
+     "width": 74,
+     "height": 29
+    },
+    "focused_pane_id": "w1:p3",
+    "panes": [
+     {
+      "pane_id": "w1:p3",
+      "focused": true,
+      "rect": {
+       "x": 0,
+       "y": 0,
+       "width": 74,
+       "height": 29
+      }
+     }
+    ],
+    "splits": []
+   },
+   {
+    "workspace_id": "w1",
+    "tab_id": "w1:t4",
+    "zoomed": false,
+    "area": {
+     "x": 0,
+     "y": 0,
+     "width": 74,
+     "height": 29
+    },
+    "focused_pane_id": "w1:p4",
+    "panes": [
+     {
+      "pane_id": "w1:p4",
+      "focused": true,
+      "rect": {
+       "x": 0,
+       "y": 0,
+       "width": 74,
+       "height": 29
+      }
+     }
+    ],
+    "splits": []
+   },
+   {
+    "workspace_id": "w1",
+    "tab_id": "w1:t5",
+    "zoomed": false,
+    "area": {
+     "x": 0,
+     "y": 0,
+     "width": 74,
+     "height": 29
+    },
+    "focused_pane_id": "w1:p5",
+    "panes": [
+     {
+      "pane_id": "w1:p5",
+      "focused": true,
+      "rect": {
+       "x": 0,
+       "y": 0,
+       "width": 74,
+       "height": 29
+      }
+     }
+    ],
+    "splits": []
+   },
+   {
+    "workspace_id": "w1",
+    "tab_id": "w1:t6",
+    "zoomed": false,
+    "area": {
+     "x": 0,
+     "y": 0,
+     "width": 74,
+     "height": 29
+    },
+    "focused_pane_id": "w1:p6",
+    "panes": [
+     {
+      "pane_id": "w1:p6",
+      "focused": true,
+      "rect": {
+       "x": 0,
+       "y": 0,
+       "width": 74,
+       "height": 29
+      }
+     }
+    ],
+    "splits": []
+   },
+   {
+    "workspace_id": "w1",
+    "tab_id": "w1:t7",
+    "zoomed": false,
+    "area": {
+     "x": 0,
+     "y": 0,
+     "width": 74,
+     "height": 29
+    },
+    "focused_pane_id": "w1:p7",
+    "panes": [
+     {
+      "pane_id": "w1:p7",
+      "focused": true,
+      "rect": {
+       "x": 0,
+       "y": 0,
+       "width": 74,
+       "height": 29
+      }
+     }
+    ],
+    "splits": []
+   },
+   {
+    "workspace_id": "w1",
+    "tab_id": "w1:t8",
+    "zoomed": false,
+    "area": {
+     "x": 0,
+     "y": 0,
+     "width": 74,
+     "height": 29
+    },
+    "focused_pane_id": "w1:p8",
+    "panes": [
+     {
+      "pane_id": "w1:p8",
+      "focused": true,
+      "rect": {
+       "x": 0,
+       "y": 0,
+       "width": 74,
+       "height": 29
+      }
+     }
+    ],
+    "splits": []
+   },
+   {
+    "workspace_id": "w1",
+    "tab_id": "w1:t9",
+    "zoomed": false,
+    "area": {
+     "x": 0,
+     "y": 0,
+     "width": 74,
+     "height": 29
+    },
+    "focused_pane_id": "w1:p9",
+    "panes": [
+     {
+      "pane_id": "w1:p9",
+      "focused": true,
+      "rect": {
+       "x": 0,
+       "y": 0,
+       "width": 74,
+       "height": 29
+      }
+     }
+    ],
+    "splits": []
+   },
+   {
+    "workspace_id": "w1",
+    "tab_id": "w1:tA",
+    "zoomed": false,
+    "area": {
+     "x": 0,
+     "y": 0,
+     "width": 74,
+     "height": 29
+    },
+    "focused_pane_id": "w1:pA",
+    "panes": [
+     {
+      "pane_id": "w1:pA",
+      "focused": true,
+      "rect": {
+       "x": 0,
+       "y": 0,
+       "width": 74,
+       "height": 29
+      }
+     }
+    ],
+    "splits": []
+   },
+   {
+    "workspace_id": "w1",
+    "tab_id": "w1:tB",
+    "zoomed": false,
+    "area": {
+     "x": 0,
+     "y": 0,
+     "width": 74,
+     "height": 29
+    },
+    "focused_pane_id": "w1:pB",
+    "panes": [
+     {
+      "pane_id": "w1:pB",
+      "focused": true,
+      "rect": {
+       "x": 0,
+       "y": 0,
+       "width": 74,
+       "height": 29
+      }
+     }
+    ],
+    "splits": []
+   },
+   {
+    "workspace_id": "w1",
+    "tab_id": "w1:tC",
+    "zoomed": false,
+    "area": {
+     "x": 0,
+     "y": 0,
+     "width": 74,
+     "height": 29
+    },
+    "focused_pane_id": "w1:pC",
+    "panes": [
+     {
+      "pane_id": "w1:pC",
+      "focused": true,
+      "rect": {
+       "x": 0,
+       "y": 0,
+       "width": 74,
+       "height": 29
+      }
+     }
+    ],
+    "splits": []
+   },
+   {
+    "workspace_id": "w1",
+    "tab_id": "w1:tD",
+    "zoomed": false,
+    "area": {
+     "x": 0,
+     "y": 0,
+     "width": 74,
+     "height": 29
+    },
+    "focused_pane_id": "w1:pD",
+    "panes": [
+     {
+      "pane_id": "w1:pD",
+      "focused": true,
+      "rect": {
+       "x": 0,
+       "y": 0,
+       "width": 74,
+       "height": 29
+      }
+     }
+    ],
+    "splits": []
+   },
+   {
+    "workspace_id": "w1",
+    "tab_id": "w1:tE",
+    "zoomed": false,
+    "area": {
+     "x": 0,
+     "y": 0,
+     "width": 74,
+     "height": 29
+    },
+    "focused_pane_id": "w1:pE",
+    "panes": [
+     {
+      "pane_id": "w1:pE",
+      "focused": true,
+      "rect": {
+       "x": 0,
+       "y": 0,
+       "width": 74,
+       "height": 29
+      }
+     }
+    ],
+    "splits": []
+   },
+   {
+    "workspace_id": "w1",
+    "tab_id": "w1:tF",
+    "zoomed": false,
+    "area": {
+     "x": 0,
+     "y": 0,
+     "width": 74,
+     "height": 29
+    },
+    "focused_pane_id": "w1:pF",
+    "panes": [
+     {
+      "pane_id": "w1:pF",
+      "focused": true,
+      "rect": {
+       "x": 0,
+       "y": 0,
+       "width": 74,
+       "height": 29
+      }
+     }
+    ],
+    "splits": []
+   }
+  ],
+  "agents": []
+ },
+ "screen": [
+  " spaces                  │ <    1       tab number 0     tab number 1     tab number 2   tab … >  + ",
+  "                         │$                                                                         ",
+  " · ~                     │                                                                          ",
+  "                         │                                                                          ",
+  "                         │                                                                          ",
+  "                         │                                                                          ",
+  "                         │                                                                          ",
+  "                         │                                                                          ",
+  "                         │                                                                          ",
+  "                         │                                                                          ",
+  "                         │                                                                          ",
+  "                         │                                                                          ",
+  "                         │                                                                          ",
+  "                         │                                                                          ",
+  " new                 menu│                                                                          ",
+  "─────────────────────────│                                                                          ",
+  " agents           grouped│                                                                          ",
+  "                         │                                                                          ",
+  "                         │                                                                          ",
+  "                         │                                                                          ",
+  "                         │                                                                          ",
+  "                         │                                                                          ",
+  "                         │                                                                          ",
+  "                         │                                                                          ",
+  "                         │                                                                          ",
+  "                         │                                                                          ",
+  "                         │                                                                          ",
+  "                         │                                                                          ",
+  "                         │                                                                          ",
+  "                        «│                                                                          "
+ ]
+}
