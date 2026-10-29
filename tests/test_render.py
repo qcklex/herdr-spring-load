@@ -11,6 +11,7 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 sys.path.insert(0, str(ROOT/'tests'))
 from spring_load import render
+from golden_fixture import load_golden
 from vt import char_width
 
 GOLDEN = ROOT/'tests/golden'
@@ -32,10 +33,7 @@ def screen_cells(line, width):
 
 def load(name):
     """A fixture plus a model built from it, with its git repos recreated."""
-    record = json.loads((GOLDEN/f'{name}.json').read_text())
-    temp = tempfile.mkdtemp(prefix='sl-render.')
-    text = json.dumps(record).replace('$TEMP', temp)
-    record = json.loads(text)
+    record = load_golden(GOLDEN/f'{name}.json', tempfile.mkdtemp(prefix='sl-render.'))
     for repo in record.get('git_repos', []):
         git = Path(repo)/'.git'
         (git/'refs/heads').mkdir(parents=True)

@@ -15,9 +15,11 @@ import unittest
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 from spring_load import contract, engine as core, geometry, render
+sys.path.insert(0, str(ROOT/'tests'))
+from golden_fixture import load_golden
 
 GOLDEN_TEMP = tempfile.mkdtemp(prefix='sl-eg.')
-GOLDEN = json.loads((ROOT/'tests/golden/spaces_tabs.json').read_text().replace('$TEMP', GOLDEN_TEMP))
+GOLDEN = load_golden(ROOT/'tests/golden/spaces_tabs.json', GOLDEN_TEMP)
 CELL_W, CELL_H, TITLEBAR = 8, 20, 28
 
 class FakeHerdr:
@@ -141,6 +143,25 @@ class ScriptedSensor:
 
     def done(self):
         return not self.steps and self.now > 3.0
+
+class TextEncodingTest(unittest.TestCase):
+    def test_core_reads_text_files_as_utf8(self):
+        # Windows CI: read_text() without an encoding uses the ANSI code page (cp1252)
+        # there, which garbles a non-ASCII herdr config (separators, labels) and so
+        # the replica's widths. Every text read in the core names UTF-8.
+        import re
+        for path in sorted((ROOT/'spring_load').glob('*.py')):
+            for number, line in enumerate(path.read_text(encoding='utf-8').splitlines(), 1):
+                for call in re.findall(r'read_text\(([^)]*)\)', line):
+                    self.assertIn("encoding='utf-8'", call, f'{path.name}:{number}: {line.strip()}')
+
+    def test_non_ascii_config_is_read_as_utf8(self):
+        temp = Path(tempfile.mkdtemp(prefix='sl-u.'))
+        self.addCleanup(lambda: __import__('shutil').rmtree(temp, True))
+        config = temp/'config.toml'
+        config.write_bytes('[ui]\ntab_bar_right_separator = " \u2502 "\n'.encode('utf-8'))
+        engine = core.Engine(ScriptedSensor([]), temp/'support', env={'HOME': str(temp)})
+        self.assertEqual(engine.config_ui(config).tab_bar_right_separator, ' \u2502 ')
 
 class EngineTest(unittest.TestCase):
     def setUp(self):

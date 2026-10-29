@@ -295,7 +295,7 @@ repository root:
 python3 -m unittest discover -s tests
 ```
 
-Result: 207 tests, 1 skipped (the opt-in isolated test below). They
+Result: 211 tests, 1 skipped (the opt-in isolated test below). They
 cover:
 
 - the replica against golden screens recorded from herdr 0.9.3, cell

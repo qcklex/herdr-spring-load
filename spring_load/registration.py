@@ -11,7 +11,7 @@ def registration(config_dir, plugin_id=PLUGIN_ID, exists=lambda p: Path(p).exist
     """'registered', 'disabled', 'manifest_missing', 'missing' or 'unreadable'."""
     path = Path(config_dir)/'plugins.json'
     try:
-        data = json.loads(path.read_text())
+        data = json.loads(path.read_text(encoding='utf-8'))
     except FileNotFoundError:
         return 'missing'
     except (OSError, ValueError):
@@ -31,7 +31,7 @@ def registration(config_dir, plugin_id=PLUGIN_ID, exists=lambda p: Path(p).exist
 def manifest_path(config_dir, plugin_id=PLUGIN_ID):
     """The registered manifest path, or None."""
     try:
-        data = json.loads((Path(config_dir)/'plugins.json').read_text())
+        data = json.loads((Path(config_dir)/'plugins.json').read_text(encoding='utf-8'))
     except (OSError, ValueError):
         return None
     entry = next((e for e in data if isinstance(e, dict) and e.get('plugin_id') == plugin_id), None) if isinstance(data, list) else None

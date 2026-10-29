@@ -389,7 +389,7 @@ def git_branch_present(cwd):
         if git.is_dir():
             git_dir = git
         else:
-            text = git.read_text(errors='strict').strip()
+            text = git.read_text(encoding='utf-8', errors='strict').strip()
             if not text.startswith('gitdir:'):
                 return None
             target = Path(text[len('gitdir:'):].strip())
@@ -397,12 +397,12 @@ def git_branch_present(cwd):
         common = git_dir
         common_file = git_dir/'commondir'
         if common_file.exists():
-            value = Path(common_file.read_text().strip())
+            value = Path(common_file.read_text(encoding='utf-8').strip())
             common = value if value.is_absolute() else git_dir/value
         config = common/'config'
-        if config.exists() and 'reftable' in config.read_text(errors='replace').lower():
+        if config.exists() and 'reftable' in config.read_text(encoding='utf-8', errors='replace').lower():
             return None
-        head = (git_dir/'HEAD').read_text(errors='strict').strip()
+        head = (git_dir/'HEAD').read_text(encoding='utf-8', errors='strict').strip()
         branch = head[len('ref: refs/heads/'):] if head.startswith('ref: refs/heads/') else ''
         return bool(branch)
     except (OSError, UnicodeDecodeError, ValueError):
@@ -417,7 +417,7 @@ def git_head_path(cwd):
             if git.is_dir() and (git/'HEAD').exists():
                 return git/'HEAD'
             if git.is_file():
-                text = git.read_text(errors='strict').strip()
+                text = git.read_text(encoding='utf-8', errors='strict').strip()
                 if not text.startswith('gitdir:'):
                     return None
                 target = Path(text[len('gitdir:'):].strip())
@@ -519,7 +519,7 @@ def remote_endpoints_listed(state_dir):
     import json
     path = Path(state_dir)/'client'/'endpoints.json'
     try:
-        data = json.loads(path.read_text())
+        data = json.loads(path.read_text(encoding='utf-8'))
     except FileNotFoundError:
         return False
     except (OSError, ValueError):

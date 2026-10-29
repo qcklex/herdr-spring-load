@@ -262,7 +262,7 @@ class Engine:
         if cached and cached[0] == stamp:
             return cached[1]
         try:
-            ui = render.ui_from_config(tomllib.loads(path.read_text()))
+            ui = render.ui_from_config(tomllib.loads(path.read_text(encoding='utf-8')))
         except (OSError, ValueError, UnicodeDecodeError):
             raise Unavailable(f'cannot parse {path}')
         self.configs[path] = (stamp, ui)
@@ -334,7 +334,7 @@ class Engine:
         ui = self.config_ui(binding.config_path)
         prefs_file = render.preferences_path(binding.client_socket, binding.state_dir)
         try:
-            prefs = render.preferences_from_json(json.loads(prefs_file.read_text()))
+            prefs = render.preferences_from_json(json.loads(prefs_file.read_text(encoding='utf-8')))
         except FileNotFoundError:
             prefs = render.Preferences()
         except (OSError, ValueError):
@@ -590,7 +590,7 @@ class Engine:
             self.missing_since = None
             manifest = registration.manifest_path(config_dir)
             try:
-                recorded = json.loads(seen.read_text()).get('manifest') if seen.exists() else None
+                recorded = json.loads(seen.read_text(encoding='utf-8')).get('manifest') if seen.exists() else None
             except (OSError, ValueError, AttributeError):
                 recorded = None
             if recorded != manifest:
@@ -609,7 +609,7 @@ class Engine:
             if self.missing_since is None:
                 self.missing_since = now
             try:
-                recorded = json.loads(seen.read_text()).get('manifest')
+                recorded = json.loads(seen.read_text(encoding='utf-8')).get('manifest')
             except (OSError, ValueError, AttributeError):
                 recorded = None
             if now - self.missing_since >= REMOVAL_CONFIRM and recorded and not Path(recorded).parent.exists():

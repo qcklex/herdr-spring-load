@@ -94,7 +94,7 @@ class Calibration:
     def __init__(self, path):
         self.path = Path(path)
         try:
-            self.data = json.loads(self.path.read_text())
+            self.data = json.loads(self.path.read_text(encoding='utf-8'))
             if not isinstance(self.data, dict):
                 self.data = {}
         except (OSError, ValueError):

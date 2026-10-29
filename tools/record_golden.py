@@ -153,10 +153,19 @@ def run(name, cols, rows, config='', prefs=None, setup=None, xpixel=0, ypixel=0)
                 os.waitpid(pid, 0)
             except ChildProcessError:
                 pass
-    # Paths under the scratch directory are rewritten so fixtures are stable.
-    text = json.dumps(record, indent=1, ensure_ascii=False).replace(temp, '$TEMP')
+    # Paths under the scratch directory are rewritten so fixtures are stable. In
+    # the data, not the JSON text, where a Windows path's backslashes are escaped.
+    def placeholder(value):
+        if isinstance(value, str):
+            return value.replace(str(temp), '$TEMP').replace(Path(temp).as_posix(), '$TEMP')
+        if isinstance(value, list):
+            return [placeholder(v) for v in value]
+        if isinstance(value, dict):
+            return {placeholder(k): placeholder(v) for k, v in value.items()}
+        return value
+    text = json.dumps(placeholder(record), indent=1, ensure_ascii=False)
     OUT.mkdir(exist_ok=True)
-    (OUT/f'{name}.json').write_text(text + '\n')
+    (OUT/f'{name}.json').write_text(text + '\n', encoding='utf-8')
     print(f'recorded {name}')
 
 def spaces_and_tabs(sock, base):
