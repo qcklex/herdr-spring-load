@@ -300,9 +300,33 @@ func clientsFor(owner: Int32, in table: [Proc]?) -> [[String: Any]]? {
     lookup(owner: owner, in: table).clients
 }
 
-/// The distinct ttys among `procs`: one per terminal session (a window, tab or split).
-func sessionCount(_ procs: [Proc]) -> Int {
-    Set(procs.compactMap { $0.tdev == -1 ? nil : $0.tdev }).count
+/// Kiro shell integration relays one terminal through a second PTY. Check its
+/// explicit process title, rather than treating arbitrary nested PTYs as relays.
+func isKiroRelay(_ proc: Proc) -> Bool {
+    guard proc.comm.contains("(kiro-cli-") else { return false }
+    let title = arguments(proc.pid).argv.first ?? ""
+    return ["zsh", "bash", "fish"].contains { title == "\($0) (kiro-cli-term)" }
+}
+
+/// Count terminal sessions, collapsing only a single-output Kiro PTY relay.
+/// Sibling tabs and branching relays still count separately. All processes on
+/// the upstream tty must be ancestors of the relay, so a peer cannot be hidden.
+func sessionCount(_ procs: [Proc], isRelay: (Proc) -> Bool = isKiroRelay) -> Int {
+    var devices = Set(procs.compactMap { $0.tdev == -1 ? nil : $0.tdev })
+    let byPid = Dictionary(procs.map { ($0.pid, $0) }, uniquingKeysWith: { first, _ in first })
+    for relay in procs where relay.tdev != -1 && isRelay(relay) {
+        let downstream = descendants(of: relay.pid, in: procs)
+        let outputs = Set(downstream.compactMap { $0.tdev == -1 || $0.tdev == relay.tdev ? nil : $0.tdev })
+        guard outputs.count == 1 else { continue }
+        var ancestors = Set<Int32>([relay.pid])
+        var parent = byPid[relay.ppid]
+        while let proc = parent, ancestors.insert(proc.pid).inserted {
+            parent = byPid[proc.ppid]
+        }
+        guard procs.filter({ $0.tdev == relay.tdev }).allSatisfy({ ancestors.contains($0.pid) }) else { continue }
+        devices.remove(relay.tdev)
+    }
+    return devices.count
 }
 
 /// herdr clients for a window owned by `owner` (see clientsFor), and how many

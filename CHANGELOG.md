@@ -47,6 +47,9 @@ observes, and selects through herdr's own API.
   600) and `--pane-dwell-ms` (default 250).
 
 ### Fixed
+- On macOS, a single Kiro shell-integration PTY relay no longer counts as
+  a hidden terminal tab and disables navigation. Extra tabs, splits and
+  ambiguous relay branches still block navigation.
 - Classic Windows consoles with native scrollbars/frame margins now map to
   their measured text grid instead of failing the generic terminal padding
   limit. Geometry refreshes on frame, client-area or DPI changes; unknown

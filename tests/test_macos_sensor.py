@@ -52,6 +52,33 @@ class MacSensorTest(unittest.TestCase):
     def run_sensor(self, *args, input=None):
         return subprocess.run([str(self.binary), *args], input=input, capture_output=True, text=True, timeout=30)
 
+    def test_kiro_relay_preserves_hidden_tab_and_split_detection(self):
+        # Compile the actual session counter with process-table fixtures. No
+        # real terminal, user processes or launch services are changed.
+        harness = self.tmp/'session-count.swift'
+        binary = self.tmp/'session-count'
+        harness.write_text(SOURCE.read_text().split('// MARK: main')[0] + r'''
+func fixture(_ pid: Int32, _ parent: Int32, _ tty: dev_t) -> Proc {
+    Proc(pid: pid, ppid: parent, uid: 0, comm: "fixture", tdev: tty,
+         pgid: pid, tpgid: pid, started: 0)
+}
+let upstream = [fixture(1, 0, 10), fixture(2, 1, 10)]
+let single = upstream + [fixture(3, 2, 20), fixture(4, 3, 20)]
+let relay: (Proc) -> Bool = { $0.pid == 2 }
+let results = [
+    sessionCount(single, isRelay: relay),
+    sessionCount(single + [fixture(5, 0, 30)], isRelay: relay),
+    sessionCount(single + [fixture(5, 2, 30)], isRelay: relay),
+    sessionCount(single + [fixture(5, 1, 10)], isRelay: relay),
+    sessionCount(single, isRelay: { _ in false })
+]
+print(String(data: try! JSONSerialization.data(withJSONObject: results), encoding: .utf8)!)
+''')
+        subprocess.run([*load_build().find_swiftc(), '-o', str(binary), str(harness)],
+                       check=True, capture_output=True, text=True, timeout=120)
+        result = subprocess.run([str(binary)], check=True, capture_output=True, text=True, timeout=10)
+        self.assertEqual(json.loads(result.stdout), [1, 2, 3, 2, 2])
+
     def test_check_prints_a_valid_hello(self):
         result = self.run_sensor('--check')
         self.assertEqual(result.returncode, 0, result.stderr)

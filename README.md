@@ -111,6 +111,8 @@ Related rules:
   one you see, so when the terminal app runs more sessions than it shows
   windows, spring-loading is off in that app, and the status says why. The
   same holds for windows minimised or on another desktop.
+  A single Kiro shell-integration PTY relay counts as one session; extra
+  tabs or splits still count separately.
 - **Windows of the same size.** If two windows of the same terminal app have
   the same size, the plugin cannot tell which one shows herdr, so it does
   nothing in either. Resize one of them.
@@ -302,7 +304,7 @@ repository root:
 python3 -m unittest discover -s tests
 ```
 
-Result: 221 tests, 1 skipped (the opt-in isolated test below). They
+Result: 222 tests, 1 skipped (the opt-in isolated test below). They
 cover:
 
 - the replica against golden screens recorded from herdr 0.9.3, cell
