@@ -242,7 +242,10 @@ class RealWin32Test(unittest.TestCase):
             calls.append((argv, kwargs))
             return subprocess.CompletedProcess(argv, 0, stdout='{"cols": 239, "rows": 68}\n', stderr='')
         w = win32.RealWin32(all_dlls(), probe_argv=['pythonw.exe', 'sensor.exe', '--console-probe'], run=run)
-        self.assertEqual(w.console_size(950), (239, 68))
+        self.assertEqual(w.console_size(950), (239, 68, None))
+        w.run = lambda argv, **k: subprocess.CompletedProcess(argv, 0, stdout='{"cols": 239, "rows": 68, "hwnd": 1800}', stderr='')
+        self.assertEqual(w.console_size(950), (239, 68, 1800))
+        w.run = run
         self.assertEqual(calls[0][0], ['pythonw.exe', 'sensor.exe', '--console-probe', '950'])
         self.assertEqual(calls[0][1]['creationflags'], win32.DETACHED_PROCESS)
         for output in ('null\n', 'garbage', '{"cols": 0, "rows": 5}'):
@@ -263,8 +266,9 @@ class RealWin32Test(unittest.TestCase):
                                       'AttachConsole': lambda pid: log.append(('attach', pid)) or 1,
                                       'CreateFileW': lambda name, *a: log.append(name) or 0x70,
                                       'GetConsoleScreenBufferInfo': info,
+                                      'GetConsoleWindow': lambda: 0x1800,
                                       'CloseHandle': lambda h: log.append(('close', h)) or 1})['kernel32']
-        self.assertEqual(win32.probe_console(950, kernel32), (239, 68))
+        self.assertEqual(win32.probe_console(950, kernel32), (239, 68, 0x1800))
         self.assertEqual(log, ['free', ('attach', 950), 'CONOUT$', ('close', 0x70), 'free'])
         kernel32.AttachConsole = lambda pid: 0 # no console: the herdr server
         self.assertIsNone(win32.probe_console(951, kernel32))
@@ -474,6 +478,26 @@ class FindClientsTest(unittest.TestCase):
         self.assertIsNone(reason)
         self.assertTrue(clients[0]['foreground'])
 
+    def test_classic_console_reports_its_text_area(self):
+        owner = Process(850, 700, 'herdr.exe')
+        procs = [Process(700, 1, 'explorer.exe'), owner]
+        def find(console, area, cls=logic.CONSOLE_CLASS, hwnd=0x1800):
+            return logic.find_clients(owner, cls, procs, TIMES, lambda pid: ['herdr'], sizes({850: console}),
+                                      owner_hwnd=hwnd, text_area=lambda h: area if h == 0x1800 else None)[0][0]
+        client = find((120, 30, 0x1800), (960, 480))
+        self.assertEqual((client['xpixel'], client['ypixel'], client['foreground']), (960, 480, True))
+        # Another console's window (a console handed to a new window), no
+        # console window, no client rect, or a size no text grid has: 0.
+        for console, area in (((120, 30, 0x1900), (960, 480)), ((120, 30), (960, 480)), ((120, 30, None), (960, 480)),
+                              ((120, 30, 0x1800), None), ((120, 30, 0x1800), (120, 30)), ((120, 30, 0x1800), (96000, 480))):
+            client = find(console, area)
+            self.assertEqual((client['xpixel'], client['ypixel']), (0, 0), (console, area))
+        # ConPTY: the console window is the hidden pseudo window, never the terminal's.
+        clients, _ = logic.find_clients(self.owner, 'CASCADIA_HOSTING_WINDOW_CLASS', wt(1, herdr=[(950, 920)]), TIMES,
+                                        lambda pid: ['herdr'], sizes({950: (120, 30, 0x1800)}), owner_hwnd=0x1800,
+                                        text_area=lambda h: (960, 480))
+        self.assertEqual((clients[0]['xpixel'], clients[0]['ypixel'], clients[0]['foreground']), (0, 0, True))
+
     def test_handed_off_console_is_not_below_the_terminal(self):
         # Default-terminal handoff: herdr started from Explorer, shown in WT.
         procs = wt(1) + [Process(700, 1, 'explorer.exe'), Process(950, 700, 'herdr.exe')]
@@ -613,6 +637,7 @@ class FakeWin32:
         self.cursor = True
         self.lookups = 0
         self.argvs, self.envs, self.sessions = {}, {}, {}
+        self.areas = {}
 
     def set_dpi_awareness(self): return self.dpi
     def virtual_screen(self): return Rect(-1920, 0, 3840, 1080)
@@ -632,6 +657,7 @@ class FakeWin32:
     def session_of(self, pid): return self.sessions.get(pid, 1)
     def own_session(self): return 1
     def console_size(self, pid): return self.consoles.get(pid)
+    def text_area(self, hwnd): return self.areas.get(hwnd)
 
     def root_at(self, x, y):
         hit = next((w for w in self.windows if w.visible and w.bounds.contains(x, y)), None)
@@ -753,6 +779,21 @@ class SensorLoopTest(unittest.TestCase):
         self.assertTrue(contract.check_stream(raw.splitlines())[0])
         self.assertEqual([e['type'] for e in events], ['hello', 'click'])
         self.assertEqual(events[1]['window']['clients'][0]['pid'], 950)
+
+    def test_classic_console_click_carries_pixel_size_the_core_fits(self):
+        from spring_load import geometry
+        console = top(0x700, 850, cls=logic.CONSOLE_CLASS, bounds=(0, 0, 962, 512), tid=51)
+        win = FakeWin32([EXPLORER, console], [Process(700, 1, 'explorer.exe'), Process(850, 700, 'herdr.exe')],
+                        {850: (120, 30, 0x700)})
+        win.areas = {0x700: (960, 480)}
+        events, raw = run_script(win, [(0.03, {'x': 300, 'y': 200}), (0.09, {'held': True}), (0.03, {'held': False})])
+        self.assertTrue(contract.check_stream(raw.splitlines())[0])
+        window = contract.validate_event(events[1])['window']
+        client = window['clients'][0]
+        self.assertEqual((client['cols'], client['rows'], client['xpixel'], client['ypixel']), (120, 30, 960, 480))
+        grid = geometry.fit((window['bounds']['width'], window['bounds']['height']), client, window['scale'])
+        self.assertIsNotNone(grid)
+        self.assertEqual((grid.cell_width, grid.cell_height), (8, 16))
 
     def test_selection_inside_the_terminal_sends_nothing(self):
         win = FakeWin32([EXPLORER, TERMINAL], wt(1, herdr=[(950, 920)]), {950: (239, 68)})

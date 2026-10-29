@@ -77,6 +77,14 @@ client.
 
 Each client also carries:
 
+- `xpixel`, `ypixel`: the text area in physical pixels, the client rect
+  (`GetClientRect`, the sensor being per-monitor DPI aware) of a classic
+  console window (`ConsoleWindowClass`). Only when that window is the
+  client's own console, which the probe checks with `GetConsoleWindow`, and
+  only when the size gives a plausible cell (3 to 200 by 6 to 400 pixels).
+  Otherwise 0, and the core refuses: Windows Terminal and other ConPTY
+  terminals draw their text area themselves and expose no rect for it (their
+  console window is a hidden pseudo window).
 - `started`: the process creation time from `GetProcessTimes`, in seconds
   since the Unix epoch.
 - `env`: the contract's environment keys only (`HERDR_*`, `XDG_CONFIG_HOME`,

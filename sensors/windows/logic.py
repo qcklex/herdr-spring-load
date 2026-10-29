@@ -5,6 +5,7 @@
 - pick_window: the topmost normal top-level window under the pointer.
 - find_clients: herdr client processes below a window owner, with the
   fail-safe rule for terminals that host several sessions in one process.
+- text_area_pixels: a classic console window's text area as xpixel/ypixel.
 - all_clients: every herdr process of this logon session, for the core's
   exactly-one-client gate.
 - parse_environment: the contract's environment keys from an environment block."""
@@ -28,6 +29,10 @@ HERDR_NAMES = {'herdr', 'herdr.exe'}
 ENV_KEYS = ('HERDR_SESSION', 'HERDR_SOCKET_PATH', 'HERDR_CLIENT_SOCKET_PATH', 'HERDR_CONFIG_PATH',
             'XDG_CONFIG_HOME', 'XDG_STATE_HOME', 'HOME', 'APPDATA', 'LOCALAPPDATA', 'USERPROFILE')
 _ENV_KEYS_UPPER = {k.upper(): k for k in ENV_KEYS}
+# Plausible console cell sizes in physical pixels (a 5 pt font at 100 % up to
+# a 72 pt font at 300 %); a client area outside them is not a text area.
+CELL_WIDTH = (3, 200)
+CELL_HEIGHT = (6, 400)
 
 def parse_environment(block):
     """The allowed keys from a Windows environment block ("K=V\\0...\\0\\0", already
@@ -130,23 +135,39 @@ def session_count(owner, owner_cls, processes):
     hosts = [p for p in processes if p.ppid == owner.pid and p.exe.lower() in CONSOLE_HOSTS]
     return len(hosts) or None
 
-def client_entry(pid, argv, env, started, rows=None, cols=None, foreground=None):
+def client_entry(pid, argv, env, started, rows=None, cols=None, foreground=None, xpixel=0, ypixel=0):
     """A contract client object. Without argv the session cannot be worked out,
     so env is dropped too: the core then never binds the client and counts it
     as attached to every session."""
-    return {'pid': pid, 'argv': argv or [], 'tty': None, 'rows': rows, 'cols': cols, 'xpixel': 0, 'ypixel': 0,
+    return {'pid': pid, 'argv': argv or [], 'tty': None, 'rows': rows, 'cols': cols, 'xpixel': xpixel, 'ypixel': ypixel,
             'foreground': foreground, 'started': started, 'env': env if argv else None}
 
+def text_area_pixels(area, cols, rows):
+    """(xpixel, ypixel) from a console window's client area (width, height) in
+    physical pixels, or (0, 0) when it cannot be this console's text grid."""
+    if not area or not cols or not rows:
+        return 0, 0
+    width, height = area
+    if not (CELL_WIDTH[0] <= width / cols <= CELL_WIDTH[1] and CELL_HEIGHT[0] <= height / rows <= CELL_HEIGHT[1]):
+        return 0, 0
+    return int(width), int(height)
+
 def find_clients(owner, owner_cls, processes, created, argv_of, console_size,
-                 env_of=lambda pid: None, started_of=lambda pid: None):
+                 env_of=lambda pid: None, started_of=lambda pid: None, owner_hwnd=None, text_area=lambda hwnd: None):
     """Client objects (docs/SENSOR.md 2.1) for the herdr processes below `owner`.
 
     `foreground` is true only when the window provably shows that client: it
     is the only herdr client found and the owner hosts exactly one session.
     Otherwise every client is reported with foreground false, so the core
     refuses. This is the Windows Terminal multi-tab rule: hidden tabs keep
-    their console size, so fitting the window proves nothing. Returns
-    (clients, reason) where reason explains a refusal, or None."""
+    their console size, so fitting the window proves nothing.
+
+    `console_size(pid)` gives (cols, rows) or (cols, rows, console hwnd).
+    xpixel/ypixel are the text area (`text_area(hwnd)`, the client rect in
+    physical pixels) only when the window is a classic console window and is
+    that client's own console; a ConPTY terminal (Windows Terminal and
+    others) draws its text area itself, so there they stay 0 and the core
+    refuses. Returns (clients, reason) where reason explains a refusal, or None."""
     parents = {p.pid: p.ppid for p in processes}
     candidates = [p for p in processes if p.exe.lower() in HERDR_NAMES
                   and (descends(p.pid, owner.pid, parents, created)
@@ -156,10 +177,13 @@ def find_clients(owner, owner_cls, processes, created, argv_of, console_size,
         size = console_size(p.pid)
         if size is None:
             continue # no console: the server or a detached CLI, not a client
-        cols, rows = size
+        cols, rows, *console = size
+        xpixel = ypixel = 0
+        if owner_cls == CONSOLE_CLASS and owner_hwnd is not None and console and console[0] == owner_hwnd:
+            xpixel, ypixel = text_area_pixels(text_area(owner_hwnd), cols, rows)
         argv = argv_of(p.pid)
         clients.append(client_entry(p.pid, argv, env_of(p.pid) if argv else None, started_of(p.pid),
-                                    rows=rows, cols=cols, foreground=False))
+                                    rows=rows, cols=cols, foreground=False, xpixel=xpixel, ypixel=ypixel))
     sessions = session_count(owner, owner_cls, processes)
     reason = None
     if len(clients) > 1:

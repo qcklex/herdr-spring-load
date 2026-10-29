@@ -11,18 +11,19 @@ autospawns), then checks, with the real Win32 calls (RealWin32, no fakes):
    scratch XDG_CONFIG_HOME), start time and console size (through the
    --console-probe child), and all_clients;
 3. workspace.focus, tab.focus and pane.focus round-trip over the named pipe;
-4. the core, fed a synthesized window around that real client, focuses a
-   Space, a tab and a pane through the API with one client attached;
-5. with a second client attached, it refuses.
+4. the real console window as the sensor describes it: a non-zero text
+   area (xpixel/ypixel) for the client, and a grid the core's geometry.fit
+   accepts for the window's real bounds;
+5. the core, fed that real window description, focuses a Space, a tab and
+   a pane through the API with one client attached;
+6. with a second client attached, it refuses.
 
-Pointer events are scripted (FeedSensor, as tests/test_isolated_herdr.py).
-Two things are patched and reported, not hidden: the window is synthesized
-(the console window of a CI runner is not a terminal anyone looks at), and
-the client's xpixel/ypixel are set, because a Windows console reports no
-pixel size and geometry.fit needs one: with the real values the core can
-never fit a Windows client (status: "no herdr client in this window matches
-its size"). The calibration is seeded instead of learned from a click, since
-the test cannot click into the console."""
+Pointer events are scripted (FeedSensor, as tests/test_isolated_herdr.py),
+and the calibration is seeded from the console's real client origin
+(ClientToScreen) instead of learned from a click, since the test cannot
+click into the console. Nothing else is patched."""
+import ctypes
+from ctypes import wintypes
 import json
 import os
 from pathlib import Path
@@ -42,7 +43,14 @@ from sensors.windows import logic, sensor as windows_sensor
 from sensors.windows.win32 import RealWin32
 
 T0 = time.time()
-CELL_W, CELL_H, TITLEBAR, LEFT = 8, 20, 28, 2
+
+def client_origin(hwnd):
+    """Screen position of a window's client area (physical pixels: this
+    process is per-monitor DPI aware once the sensor's reads have run)."""
+    user32 = ctypes.WinDLL('user32', use_last_error=True)
+    user32.ClientToScreen.argtypes = [wintypes.HWND, ctypes.POINTER(wintypes.POINT)]
+    point = wintypes.POINT(0, 0)
+    return (point.x, point.y) if user32.ClientToScreen(hwnd, ctypes.byref(point)) else None
 
 class FeedSensor:
     def __init__(self):
@@ -104,8 +112,8 @@ def main():
             return [p for p in win.processes() or [] if p.exe.lower() in logic.HERDR_NAMES]
         check.ok('client process listed', wait(lambda: any(p.pid == first.pid for p in herdr_processes())), first.pid)
         size = wait(lambda: win.console_size(first.pid), 10)
-        check.ok('console size through the probe child', size, size)
-        cols, rows = size
+        check.ok('console size and console window through the probe child', size and size[2], size)
+        cols, rows, console_hwnd = size
         argv = win.argv(first.pid)
         check.ok('client argv', argv and Path(argv[0]).name.lower() == 'herdr.exe' and len(argv) == 1, argv)
         client_env = win.environment(first.pid)
@@ -125,10 +133,32 @@ def main():
         check.ok('all_clients lists the client with its environment',
                  any(c['pid'] == first.pid and c['env'] and c['env'].get('XDG_CONFIG_HOME') == env['XDG_CONFIG_HOME']
                      for c in everyone or []), everyone)
-        client = logic.client_entry(first.pid, argv, client_env, client_started, rows=rows, cols=cols, foreground=True)
-        check.note('real client pixel size (Windows consoles report none)', (client['xpixel'], client['ypixel']))
-        client.update(xpixel=cols * CELL_W, ypixel=rows * CELL_H)   # patched: see the module docstring
-        contract.validate_client(client)
+
+        # 4. The real console window: pixel size and geometry.
+        console = win.window(console_hwnd)
+        check.ok('the console window is a classic console window', console.cls == logic.CONSOLE_CLASS,
+                 {'class': console.cls, 'pid': console.pid, 'bounds': console.bounds.as_json()})
+        check.note('console window', {'pid': console.pid, 'client pid': first.pid, 'bounds': console.bounds.as_json(),
+                                      'client area': win.text_area(console_hwnd), 'scale': win.scale(console_hwnd)})
+        described = contract.validate_window(reader.describe(console, [], True))
+        listed = [c for c in described['clients'] or [] if c['pid'] == first.pid]
+        check.ok('the sensor finds the client behind the console window', listed,
+                 {'clients': described['clients'], 'reason': reader.clients.get(console_hwnd, (None,) * 4)[3]})
+        client = listed[0]
+        check.ok('real console: non-zero pixel size', client['xpixel'] > 0 and client['ypixel'] > 0,
+                 {k: client[k] for k in ('cols', 'rows', 'xpixel', 'ypixel', 'foreground')})
+        bounds = described['bounds']
+        grid = geometry.fit((bounds['width'], bounds['height']), client, described['scale'])
+        check.ok('core geometry fits the real console window', grid and (grid.cols, grid.rows) == (cols, rows),
+                 {'grid': grid, 'bounds': bounds, 'leftover': (bounds['width'] - client['xpixel'],
+                                                             bounds['height'] - client['ypixel'])})
+        origin = client_origin(console_hwnd)
+        check.ok('ClientToScreen of the console window', origin, origin)
+        ox, oy = origin[0] - bounds['x'], origin[1] - bounds['y']
+        check.ok('the real text origin lies in the fitted grid',
+                 grid.origin_x.low - 0.5 <= ox <= grid.origin_x.high + 0.5 and grid.origin_y.low - 0.5 <= oy <= grid.origin_y.high + 0.5,
+                 {'origin': (ox, oy), 'grid x': grid.origin_x, 'grid y': grid.origin_y})
+        cell_w, cell_h = grid.cell_width, grid.cell_height
 
         # 3. The public focus calls round-trip.
         project = snap()['focused_workspace_id']
@@ -144,19 +174,17 @@ def main():
             herdr_api.focus(sock, kind, target, timeout=3)
             check.ok(f'{herdr_api.FOCUS_METHODS[kind][0]} {target} round-trips', wait(lambda: snap()[key] == target, 5))
 
-        # 4. The core with one client.
-        bounds = {'x': 100.0, 'y': 50.0, 'width': cols * CELL_W + 2 * LEFT, 'height': rows * CELL_H + TITLEBAR}
-        def window(described):
-            return {'id': '1', 'pid': os.getpid(), 'app': 'ci.console', 'bounds': dict(bounds), 'scale': 1.0,
-                    'peers': [], 'clients': described}
+        # 5. The core with one client, on the sensor's description of the real window.
+        def window(clients):
+            return dict(described, bounds=dict(bounds), clients=clients)
         def point(rect):
-            return (bounds['x'] + LEFT + (rect.x + rect.width / 2) * CELL_W,
-                    bounds['y'] + TITLEBAR + (rect.y + rect.height / 2) * CELL_H)
+            return (bounds['x'] + ox + (rect.x + rect.width / 2) * cell_w,
+                    bounds['y'] + oy + (rect.y + rect.height / 2) * cell_h)
         support = base/'support'
         support.mkdir()
-        key = geometry.calibration_key('ci.console', (bounds['width'], bounds['height']), client)
+        key = geometry.calibration_key(described['app'], (bounds['width'], bounds['height']), client)
         (support/'calibration.json').write_text(json.dumps(
-            {key: {'origin': [LEFT - 0.5, LEFT + 0.5, TITLEBAR - 1, TITLEBAR + 1], 'candidate': None}}))
+            {key: {'origin': [ox - 0.5, ox + 0.5, oy - 0.5, oy + 0.5], 'candidate': None}}))
         ui = render.ui_from_config(tomllib.loads(CONFIG))
         model = lambda: render.build_model(cols, rows, snap(), ui, render.Preferences())
         feed = FeedSensor()
@@ -190,7 +218,7 @@ def main():
                  engine.status)
         feed.put({'type': 'drag_end', 'x': 0, 'y': 0, 'reason': 'released'})
 
-        # 5. A second client: refuse.
+        # 6. A second client: refuse.
         second = start_client(herdr, env, str(base))
         def both():
             listed = [c for c in reader.all_clients() or [] if len(c['argv']) == 1]
@@ -217,8 +245,9 @@ def main():
         for process in (first, second):
             if process and process.poll() is None:
                 process.kill()
-    check.done({'patched': ['synthesized window', 'client xpixel/ypixel', 'seeded calibration']})
-    print('windows e2e: real Win32 reads, focus round-trip, core with one client, refusal with two PASS')
+    check.done({'patched': ['seeded calibration (from ClientToScreen)']})
+    print('windows e2e: real Win32 reads, real console pixel size and geometry, focus round-trip, '
+          'core with one client, refusal with two PASS')
 
 if __name__ == '__main__':
     main()
