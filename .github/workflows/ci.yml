@@ -1,0 +1,127 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  windows:
+    name: Windows (real Win32, herdr 0.9.3)
+    runs-on: windows-latest
+    timeout-minutes: 40
+    env:
+      HERDR_VERSION: 0.9.3
+      # sha256 of herdr-windows-x86_64.zip from the v0.9.3 release
+      # (distribution/latest.json in herdr's source still lists 0.9.1).
+      HERDR_SHA256: c75b1fa49f7a3ba4b8b11789912a6147e4214a3b6fd3556d0f80076c8887d795
+      PYTHONUTF8: '1'
+      PYTHONDONTWRITEBYTECODE: '1'
+    defaults:
+      run:
+        shell: pwsh
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Download herdr for Windows
+        run: |
+          $zip = Join-Path $env:RUNNER_TEMP 'herdr.zip'
+          $url = "https://github.com/herdrdev/herdr/releases/download/v$env:HERDR_VERSION/herdr-windows-x86_64.zip"
+          Invoke-WebRequest -Uri $url -OutFile $zip
+          $hash = (Get-FileHash $zip -Algorithm SHA256).Hash.ToLower()
+          if ($hash -ne $env:HERDR_SHA256) { throw "herdr zip sha256 $hash, expected $env:HERDR_SHA256" }
+          $dir = Join-Path $env:RUNNER_TEMP 'herdr'
+          Expand-Archive $zip -DestinationPath $dir
+          $exe = Get-ChildItem $dir -Recurse -Filter herdr.exe | Select-Object -First 1
+          if (-not $exe) { throw 'herdr.exe not in the zip' }
+          Get-ChildItem $exe.DirectoryName -Recurse | Select-Object -ExpandProperty FullName
+          Add-Content $env:GITHUB_PATH $exe.DirectoryName
+
+      - name: Unit suite (modules that run on Windows)
+        run: python tests/windows/unit.py
+
+      - name: Unit suite (everything, informational)
+        continue-on-error: true
+        run: python tests/windows/unit.py --all
+
+      - name: E2E against herdr over the named pipe (real Win32)
+        run: python tests/windows/e2e.py
+
+      - name: Plugin build, status and remove in a scratch profile
+        run: python tests/windows/plugin_steps.py
+
+      - name: Sensor output against the contract
+        run: python tests/windows/sensor_check.py --seconds 4 --name checkout-sensor -- python sensors/windows/run_sensor.py --verbose
+
+      - name: SendInput drag simulation (best effort)
+        continue-on-error: true
+        run: python tests/windows/drag_probe.py
+
+      - name: Upload reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-reports
+          path: tests/windows/out/
+          if-no-files-found: warn
+
+  ubuntu:
+    name: Ubuntu (unit suite, Docker Linux E2E)
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    env:
+      PYTHONDONTWRITEBYTECODE: '1'
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      # Several tests create their temp folders in /private/tmp (a macOS path).
+      - name: Provide /private/tmp
+        run: sudo install -d -m 1777 /private/tmp
+
+      - name: Unit suite
+        run: python -m unittest discover -s tests -v
+
+      - name: Linux E2E in Docker (X11, xterm, GTK drag source)
+        run: sh tests/linux/run.sh "$RUNNER_TEMP/linux-e2e"
+
+      - name: Upload Linux E2E output
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: linux-e2e
+          path: ${{ runner.temp }}/linux-e2e/
+          if-no-files-found: warn
+
+  macos:
+    name: macOS (unit suite, Swift sensor)
+    runs-on: macos-latest
+    timeout-minutes: 30
+    env:
+      PYTHONDONTWRITEBYTECODE: '1'
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Unit suite
+        run: python -m unittest discover -s tests -v
+
+      - name: Build the Swift sensor and check its hello
+        run: |
+          out="$RUNNER_TEMP/herdr-spring-load-sensor-macos"
+          python -c "import importlib.util, sys; spec = importlib.util.spec_from_file_location('b', 'sensors/macos/build.py'); m = importlib.util.module_from_spec(spec); spec.loader.exec_module(m); m.build(__import__('pathlib').Path(sys.argv[1]))" "$out"
+          "$out" --check | tee "$RUNNER_TEMP/hello.ndjson"
+          python -m spring_load.contract < "$RUNNER_TEMP/hello.ndjson"
