@@ -1,16 +1,106 @@
-"""herdr's local API: one newline-delimited JSON request per connection, and
+r"""herdr's local API: one newline-delimited JSON request per connection, and
 an event subscription. The only state-changing calls the plugin makes are
-workspace.focus, tab.focus and pane.focus."""
+workspace.focus, tab.focus and pane.focus.
+
+Transport, as herdr 0.9.3's ipc.rs (interprocess 2.4.2) sets it up: a Unix
+domain socket at the socket path on macOS and Linux; on Windows a byte-mode
+named pipe called \\.\pipe\ followed by the socket path string verbatim
+(GenericNamespaced), with a marker file left at the path itself."""
 import json
 import socket
+import sys
 import threading
+import time
 
 class ApiError(RuntimeError):
     pass
 
 FOCUS_METHODS = {'space': ('workspace.focus', 'workspace_id'), 'tab': ('tab.focus', 'tab_id'), 'pane': ('pane.focus', 'pane_id')}
 
+PIPE_PREFIX = '\\\\.\\pipe\\'
+ERROR_PIPE_BUSY = 231
+
+def pipe_name(path):
+    """herdr's named pipe for a socket path on Windows."""
+    return PIPE_PREFIX + str(path)
+
+class PipeConnection:
+    """A named-pipe client with the small part of the socket interface used
+    here (sendall, recv with a timeout, shutdown, close)."""
+    def __init__(self, name, timeout, opener=open):
+        deadline = time.monotonic() + (timeout or 0)
+        while True:
+            try:
+                self.file = opener(name, 'r+b', buffering=0)
+                break
+            except OSError as error:
+                # All pipe instances busy: herdr creates the next one right after accepting.
+                if getattr(error, 'winerror', None) == ERROR_PIPE_BUSY and time.monotonic() < deadline:
+                    time.sleep(0.02)
+                    continue
+                raise
+        self.timeout = timeout
+
+    def settimeout(self, timeout):
+        self.timeout = timeout
+
+    def sendall(self, data):
+        view = memoryview(data)
+        while view:
+            written = self.file.write(view)
+            if not written:
+                raise OSError('the herdr pipe accepted no data')
+            view = view[written:]
+
+    def recv(self, size):
+        if self.timeout is None:
+            return self.file.read(size) or b''
+        result = {}
+        def read():
+            try:
+                result['data'] = self.file.read(size) or b''
+            except OSError as error:
+                result['error'] = error
+        reader = threading.Thread(target=read, daemon=True)
+        reader.start()
+        reader.join(self.timeout)
+        if reader.is_alive():
+            self._cancel()
+            raise socket.timeout('herdr did not answer in time')
+        if 'error' in result:
+            raise result['error']
+        return result['data']
+
+    def _cancel(self):
+        if sys.platform != 'win32':
+            return
+        try:
+            import ctypes, msvcrt
+            ctypes.windll.kernel32.CancelIoEx(msvcrt.get_osfhandle(self.file.fileno()), None)
+        except (OSError, AttributeError, ValueError):
+            pass
+
+    def shutdown(self, how=None):
+        self._cancel()
+
+    def close(self):
+        try:
+            self.file.close()
+        except OSError:
+            pass
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *exc):
+        self.close()
+
+USE_PIPES = sys.platform == 'win32'
+pipe_opener = open   # replaced in tests
+
 def _connect(path, timeout):
+    if USE_PIPES:
+        return PipeConnection(pipe_name(path), timeout, opener=pipe_opener)
     if not hasattr(socket, 'AF_UNIX'):
         raise ApiError('this Python has no Unix sockets')
     connection = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
@@ -93,6 +183,6 @@ class Subscription:
         self.alive = False
         try:
             self.connection.shutdown(socket.SHUT_RDWR)
-        except OSError:
+        except (OSError, AttributeError):
             pass
         self.connection.close()
