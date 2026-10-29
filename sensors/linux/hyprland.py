@@ -7,13 +7,13 @@ mouse buttons, and no Wayland protocol gives a third-party client either.
 Button state from evdev would need the 'input' group and still could not tell
 a file drag from a text selection, so it is not used.
 
-So this sensor declares the 'window' and 'clients' capabilities but not
-'drag', and the core stays inert under Hyprland (docs/SENSOR.md, section 3).
-describe() is kept so the core can use it once Hyprland exposes a drag
-signal, or for the terminal-native path.
-
-Coordinates are Hyprland's global layout space: origin at the top-left of the
-layout, y down, logical pixels. The window's 'scale' is its monitor's scale.
+So under Hyprland the sensor says hello with no capabilities, like the other
+inert Linux backends, and a status that says why: the core reports itself
+inert (docs/SENSOR.md, section 3). describe() is kept, and logged with
+--verbose, for when Hyprland exposes a drag signal or for the
+terminal-native path; it reports Hyprland's global layout space (origin at
+the top-left of the layout, y down, logical pixels, the monitor's scale as
+'scale'). That coords value is not in contract 1, so it is not announced.
 """
 import json
 import os
@@ -21,8 +21,10 @@ import socket
 
 import common
 
-CAPABILITIES = ['window', 'clients']
-COORDS = 'hyprland-layout'
+# An inert hello: no capabilities, so the coords value is never used. It is
+# one that contract 1 accepts (setup's --check validates the hello).
+CAPABILITIES = []
+COORDS = 'x11-root'
 
 
 def socket_path(env=os.environ):
@@ -104,8 +106,8 @@ def run():
         common.status('error', 'Hyprland IPC socket not found; sensor inert')
         return
     common.hello('linux-hyprland', COORDS, CAPABILITIES)
-    common.status('warn', 'Hyprland reports no drag-and-drop or button state to other programs, '
-                          'so spring-loading is off under Hyprland')
+    common.status('error', 'Hyprland reports no drag-and-drop or button state to other programs, '
+                           'so spring-loading is off under Hyprland; use an X11 session')
     if common.is_verbose():
         try:
             x, y = Hyprland(path).cursor()
