@@ -58,6 +58,14 @@ class ContractTest(unittest.TestCase):
         self.assertIsNone(contract.parse_event(json.dumps({'type': 'drag_move', 't': 1, 'x': 1, 'y': 2,
                                                            'window': {**WINDOW, 'clients': [{**CLIENT, 'started': 'x'}]}})))
 
+    def test_optional_measured_grid_origin(self):
+        client = contract.validate_client({**CLIENT,'grid_origin':{'x':1,'y':31}})
+        self.assertEqual(client['grid_origin'],{'x':1,'y':31})
+        for origin in ('invalid', {}, {'x':-1,'y':31}, {'x':1,'y':float('inf')}, {'x':True,'y':31}):
+            with self.assertRaises(contract.ContractError):
+                contract.validate_client({**CLIENT,'grid_origin':origin})
+        self.assertNotIn('grid_origin',contract.validate_client(CLIENT))
+
     def test_optional_sessions(self):
         # Review N10: how many terminal sessions the window's app runs.
         move = lambda **window: json.dumps({'type': 'drag_move', 't': 1, 'x': 1, 'y': 2, 'window': {**WINDOW, **window}})

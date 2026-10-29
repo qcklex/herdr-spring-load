@@ -7,7 +7,7 @@ import ctypes
 import json
 import subprocess
 
-from .structs import (CONSOLE_SCREEN_BUFFER_INFO, CURSORINFO, DWORD, FILETIME, GUITHREADINFO, HANDLE, LONG,
+from .structs import (CONSOLE_FONT_INFOEX, CONSOLE_SCREEN_BUFFER_INFO, CURSORINFO, DWORD, FILETIME, GUITHREADINFO, HANDLE, LONG,
                      PARAMS_ENVIRONMENT, PARAMS_ENVIRONMENT_SIZE, PEB_PROCESS_PARAMETERS, POINT,
                      PROCESS_BASIC_INFORMATION, PROCESSENTRY32W, RECT, UNICODE_STRING, filetime_epoch,
                      filetime_value, wide_text)
@@ -63,6 +63,7 @@ SIGNATURES = {
         'GetLayeredWindowAttributes': (BOOL, [HANDLE, P(DWORD), P(BYTE), P(DWORD)]),
         'GetWindowRect': (BOOL, [HANDLE, P(RECT)]),
         'GetClientRect': (BOOL, [HANDLE, P(RECT)]),
+        'ClientToScreen': (BOOL, [HANDLE, P(POINT)]),
         'WindowFromPoint': (HANDLE, [POINT]),
         'GetAncestor': (HANDLE, [HANDLE, UINT]),
         'GetDpiForWindow': (UINT, [HANDLE]),
@@ -82,6 +83,7 @@ SIGNATURES = {
         'CreateFileW': (HANDLE, [ctypes.c_wchar_p, DWORD, DWORD, ctypes.c_void_p, DWORD, DWORD, HANDLE]),
         'GetConsoleScreenBufferInfo': (BOOL, [HANDLE, P(CONSOLE_SCREEN_BUFFER_INFO)]),
         'GetConsoleWindow': (HANDLE, []),
+        'GetCurrentConsoleFontEx': (BOOL, [HANDLE, BOOL, P(CONSOLE_FONT_INFOEX)]),
         'ReadProcessMemory': (BOOL, [HANDLE, ctypes.c_void_p, ctypes.c_void_p, ctypes.c_size_t, P(ctypes.c_size_t)]),
         'ProcessIdToSessionId': (BOOL, [DWORD, P(DWORD)]),
         'GetCurrentProcessId': (DWORD, []),
@@ -260,6 +262,13 @@ class RealWin32:
         width, height = rect.right - rect.left, rect.bottom - rect.top
         return (width, height) if width > 0 and height > 0 else None
 
+    def text_origin(self, hwnd):
+        """Physical screen position of the classic console client area's top-left."""
+        point = POINT(0, 0)
+        if not self.fn['ClientToScreen'](hwnd, ctypes.byref(point)):
+            return None
+        return point.x, point.y
+
     def scale(self, hwnd):
         dpi = self.fn['GetDpiForWindow'](hwnd)
         return dpi / 96 if dpi else None
@@ -386,10 +395,10 @@ class RealWin32:
             self.fn['CloseHandle'](handle)
 
     def console_size(self, pid):
-        """(cols, rows, console window or None) of the console `pid` is attached
-        to, read by a short-lived child: attaching would detach this process
-        from its own console. Under ConPTY the console window is a hidden
-        pseudo window, never the terminal's."""
+        """(cols, rows, console window or None, (cell width, cell height) or None)
+        of the console `pid` is attached to, read by a short-lived child:
+        attaching would detach this process from its own console. Under ConPTY
+        the console window is a hidden pseudo window, never the terminal's."""
         if not self.probe_argv:
             return None
         try:
@@ -400,15 +409,18 @@ class RealWin32:
             return None
         if not isinstance(data, dict):
             return None
-        cols, rows, hwnd = data.get('cols'), data.get('rows'), data.get('hwnd')
-        if isinstance(cols, int) and isinstance(rows, int) and cols > 0 and rows > 0:
-            return cols, rows, (hwnd if isinstance(hwnd, int) and hwnd > 0 else None)
-        return None
+        cols, rows, hwnd, cell = data.get('cols'), data.get('rows'), data.get('hwnd'), data.get('cell')
+        if not (isinstance(cols, int) and isinstance(rows, int) and cols > 0 and rows > 0):
+            return None
+        if not (isinstance(cell, list) and len(cell) == 2 and all(isinstance(v, int) and v > 0 for v in cell)):
+            cell = None
+        return cols, rows, (hwnd if isinstance(hwnd, int) and hwnd > 0 else None), (tuple(cell) if cell else None)
 
 def probe_console(pid, kernel32=None):
     """Runs in the probe child: attach to `pid`'s console and read its window
-    size. Writes nothing to the console. Returns (cols, rows, console window
-    handle or None) or None."""
+    size, its window and its font's cell size in pixels. Writes nothing to the
+    console. Returns (cols, rows, console window handle or None, (cell width,
+    cell height) or None) or None."""
     fn = bind({'kernel32': kernel32 if kernel32 is not None else ctypes.WinDLL('kernel32', use_last_error=True)},
               only={'kernel32'})
     fn['FreeConsole']()
@@ -424,7 +436,13 @@ def probe_console(pid, kernel32=None):
             if not fn['GetConsoleScreenBufferInfo'](handle, ctypes.byref(info)):
                 return None
             window = info.srWindow
-            return window.Right - window.Left + 1, window.Bottom - window.Top + 1, fn['GetConsoleWindow']() or None
+            font = CONSOLE_FONT_INFOEX(cbSize=ctypes.sizeof(CONSOLE_FONT_INFOEX))
+            cell = None
+            if fn['GetCurrentConsoleFontEx'](handle, 0, ctypes.byref(font)) \
+                    and font.dwFontSize.X > 0 and font.dwFontSize.Y > 0:
+                cell = (font.dwFontSize.X, font.dwFontSize.Y)
+            return (window.Right - window.Left + 1, window.Bottom - window.Top + 1, fn['GetConsoleWindow']() or None,
+                    cell)
         finally:
             fn['CloseHandle'](handle)
     finally:

@@ -44,6 +44,7 @@ class Sensor:
         self.throttle = logic.MoveThrottle()
         self.screen = None
         self.clients = {} # hwnd -> (time, owner exe, clients, reason)
+        self.client_geometry = {} # hwnd -> measured client area, DPI and frame identity
         self.peers = {} # hwnd -> (time, peer rects)
         self.warned = set()
         self.press_tid = None
@@ -116,7 +117,8 @@ class Sensor:
             return times[pid]
         clients, reason = logic.find_clients(owner, window.cls, processes, created, self.win.argv,
                                              self.win.console_size, self.win.environment, self.win.started,
-                                             owner_hwnd=window.hwnd, text_area=self.win.text_area)
+                                             owner_hwnd=window.hwnd, text_area=self.win.text_area,
+                                             window_scale=self.win.scale(window.hwnd))
         return owner.exe, clients, reason
 
     def all_clients(self):
@@ -131,16 +133,38 @@ class Sensor:
         if window is None:
             return None
         cached = self.clients.get(window.hwnd)
-        if refresh or cached is None:
+        def metrics():
+            if window.cls != logic.CONSOLE_CLASS:
+                return None
+            return (window.pid, window.bounds.width, window.bounds.height,
+                    self.win.text_area(window.hwnd), self.win.scale(window.hwnd))
+        measured = metrics()
+        if refresh or cached is None or self.client_geometry.get(window.hwnd) != measured:
+
             exe, clients, reason = self.lookup(window)
             cached = (self.clock(), exe, clients, reason)
             self.clients[window.hwnd] = cached
+            self.client_geometry[window.hwnd] = measured
             self.debug(f'window {window.hwnd} ({exe}): {len(clients or [])} clients, {reason or "ok"}')
             if reason:
                 self.status('warn', REASONS[reason], key=(window.hwnd, reason))
         _, exe, clients, _ = cached
+        # The font grid excludes native borders/scrollbars. Measure its origin
+        # afresh with the current frame; do not apply a cached screen location
+        # after a move or DPI transition. Copy client entries, not the cache.
+        described = None if clients is None else [dict(c) for c in clients]
+        if described and window.cls == logic.CONSOLE_CLASS:
+            origin = self.win.text_origin(window.hwnd)
+            coherent = measured == metrics()
+            for client in described:
+                if client['xpixel'] > 0 and client['ypixel'] > 0:
+                    if origin is None or not coherent:
+                        client['xpixel'] = client['ypixel'] = 0
+                    else:
+                        client['grid_origin'] = {'x': origin[0] - window.bounds.x,
+                                                 'y': origin[1] - window.bounds.y}
         return {'id': str(window.hwnd), 'pid': window.pid, 'app': exe, 'bounds': window.bounds.as_json(),
-                'scale': self.win.scale(window.hwnd), 'peers': [p.as_json() for p in peers], 'clients': clients}
+                'scale': self.win.scale(window.hwnd), 'peers': [p.as_json() for p in peers], 'clients': described}
 
     # Polling
 
@@ -225,7 +249,7 @@ def main(argv=None, win_factory=None, platform=None):
     if '--console-probe' in argv:
         from .win32 import probe_console
         size = probe_console(int(argv[argv.index('--console-probe') + 1]))
-        print(json.dumps({'cols': size[0], 'rows': size[1], 'hwnd': size[2]} if size else None))
+        print(json.dumps({'cols': size[0], 'rows': size[1], 'hwnd': size[2], 'cell': size[3]} if size else None))
         return 0
     sensor = None
     stop = threading.Event()

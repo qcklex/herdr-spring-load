@@ -65,6 +65,22 @@ def fit(bounds, client, scale_hint=None):
     xpixel, ypixel = client.get('xpixel') or 0, client.get('ypixel') or 0
     if not cols or not rows or xpixel <= 0 or ypixel <= 0:
         return None
+    # A classic Windows console provides font-cell dimensions and a measured
+    # ClientToScreen origin in the same physical units as its outer bounds.
+    # Its scrollbar may be wider than our generic padding allowance. This
+    # branch trusts only a finite, fully contained, whole-cell measured grid.
+    origin = client.get('grid_origin')
+    if origin is not None:
+        if not isinstance(origin, dict):
+            return None
+        x, y = origin.get('x'), origin.get('y')
+        if not all(isinstance(v, (int, float)) and not isinstance(v, bool) and math.isfinite(v) for v in (x, y)):
+            return None
+        if x < 0 or y < 0 or x + xpixel > width or y + ypixel > height:
+            return None
+        if xpixel % cols or ypixel % rows:
+            return None
+        return Grid(cols, rows, xpixel / cols, ypixel / rows, Interval(x, x), Interval(y, y))
     scales = sorted({*SCALES, *( [scale_hint] if scale_hint else [])}, key=lambda s: (s != scale_hint, s))
     fits = []
     for scale in scales:
@@ -77,8 +93,10 @@ def fit(bounds, client, scale_hint=None):
     return fits[0] if len(fits) == 1 else None
 
 def calibration_key(app, bounds, client):
-    return '|'.join(str(v) for v in (app or '?', round(bounds[0]), round(bounds[1]), client.get('cols'), client.get('rows'),
+    key = '|'.join(str(v) for v in (app or '?', round(bounds[0]), round(bounds[1]), client.get('cols'), client.get('rows'),
                                      client.get('xpixel'), client.get('ypixel')))
+    origin = client.get('grid_origin')
+    return key if origin is None else key + '|origin:' + str(origin['x']) + ',' + str(origin['y'])
 
 def _interval_pair(value):
     if isinstance(value, list) and len(value) == 4 and all(isinstance(v, (int, float)) for v in value):

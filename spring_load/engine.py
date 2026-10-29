@@ -296,9 +296,10 @@ class Engine:
         client, grid = self.bound_client(window)
         bounds = (window['bounds']['width'], window['bounds']['height'])
         context = self.context
+        key = geometry.calibration_key(window.get('app'), bounds, client)
         now = self.clock()
         if context and context.window_id == window['id'] and context.client_pid == client['pid'] and context.bounds == bounds \
-                and now - context.read_at < MODEL_TTL:
+                and context.key == key and now - context.read_at < MODEL_TTL:
             return context
         try:
             binding = clients.bind(client, self.env, self.platform)

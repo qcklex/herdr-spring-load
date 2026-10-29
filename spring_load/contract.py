@@ -73,6 +73,13 @@ def validate_client(value):
     for key in ('rows', 'cols', 'xpixel', 'ypixel'):
         if client[key] is not None and client[key] < 0:
             raise ContractError(f'client.{key} must not be negative')
+    if value.get('grid_origin') is not None:
+        origin = value['grid_origin']
+        if not isinstance(origin, dict):
+            raise ContractError('client.grid_origin must be an object')
+        client['grid_origin'] = {axis: _number(origin.get(axis), f'client.grid_origin.{axis}') for axis in ('x', 'y')}
+        if any(v < 0 for v in client['grid_origin'].values()):
+            raise ContractError('client.grid_origin must not be negative')
     return client
 
 def validate_window(value):

@@ -47,6 +47,10 @@ class CONSOLE_SCREEN_BUFFER_INFO(ctypes.Structure):
     _fields_ = [('dwSize', COORD), ('dwCursorPosition', COORD), ('wAttributes', WORD),
                 ('srWindow', SMALL_RECT), ('dwMaximumWindowSize', COORD)]
 
+class CONSOLE_FONT_INFOEX(ctypes.Structure):
+    _fields_ = [('cbSize', DWORD), ('nFont', DWORD), ('dwFontSize', COORD), ('FontFamily', DWORD),
+                ('FontWeight', DWORD), ('FaceName', WORD * 32)]
+
 class UNICODE_STRING(ctypes.Structure):
     _fields_ = [('Length', WORD), ('MaximumLength', WORD), ('Buffer', HANDLE)]
 

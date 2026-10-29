@@ -40,7 +40,8 @@ class StructLayoutTest(unittest.TestCase):
     def test_sizes_match_64_bit_windows(self):
         expected = {structs.POINT: 8, structs.RECT: 16, structs.CURSORINFO: 24, structs.GUITHREADINFO: 72,
                     structs.PROCESSENTRY32W: 568, structs.CONSOLE_SCREEN_BUFFER_INFO: 22, structs.FILETIME: 8,
-                    structs.UNICODE_STRING: 16, structs.PROCESS_BASIC_INFORMATION: 48}
+                    structs.UNICODE_STRING: 16, structs.PROCESS_BASIC_INFORMATION: 48,
+                    structs.CONSOLE_FONT_INFOEX: 84}
         for struct, size in expected.items():
             self.assertEqual(ctypes.sizeof(struct), size, struct.__name__)
 
@@ -52,6 +53,8 @@ class StructLayoutTest(unittest.TestCase):
         self.assertEqual(structs.CONSOLE_SCREEN_BUFFER_INFO.srWindow.offset, 10)
         self.assertEqual(structs.PROCESS_BASIC_INFORMATION.PebBaseAddress.offset, 8)
         self.assertEqual(structs.PROCESS_BASIC_INFORMATION.UniqueProcessId.offset, 32)
+        self.assertEqual(structs.CONSOLE_FONT_INFOEX.dwFontSize.offset, 8)
+        self.assertEqual(structs.CONSOLE_FONT_INFOEX.FaceName.offset, 20)
 
     def test_field_widths_match_64_bit_windows(self):
         # Widths, not type identity: c_int32 is c_long on Windows (LLP64) and
@@ -67,6 +70,8 @@ class StructLayoutTest(unittest.TestCase):
                                       'dwFlags': 4, 'szExeFile': 520},
             structs.CONSOLE_SCREEN_BUFFER_INFO: {'dwSize': 4, 'dwCursorPosition': 4, 'wAttributes': 2, 'srWindow': 8,
                                                  'dwMaximumWindowSize': 4},
+            structs.CONSOLE_FONT_INFOEX: {'cbSize': 4, 'nFont': 4, 'dwFontSize': 4, 'FontFamily': 4, 'FontWeight': 4,
+                                          'FaceName': 64},
             structs.PROCESS_BASIC_INFORMATION: {'ExitStatus': 4, '_pad0': 4, 'PebBaseAddress': 8, 'AffinityMask': 8,
                                                 'BasePriority': 4, '_pad1': 4, 'UniqueProcessId': 8,
                                                 'InheritedFromUniqueProcessId': 8},
@@ -185,6 +190,16 @@ class RealWin32Test(unittest.TestCase):
         self.assertEqual(w.root_at(5.7, 9), 0x30)
         self.assertEqual(seen, [(5, 9)])
 
+    def test_console_client_origin_is_measured_in_screen_pixels(self):
+        def locate(hwnd, point):
+            self.assertEqual(hwnd, 0x1800)
+            obj(point).x, obj(point).y = -799, 83
+            return 1
+        w = win32.RealWin32(all_dlls(user32={'ClientToScreen': locate}))
+        self.assertEqual(w.text_origin(0x1800), (-799, 83))
+        w.fn['ClientToScreen'] = lambda *args: 0
+        self.assertIsNone(w.text_origin(0x1800))
+
     def test_process_snapshot(self):
         table = [(4, 0, 'System'), (900, 4, 'WindowsTerminal.exe'), (950, 900, 'herdr.exe')]
         cursor = {'i': 0}
@@ -242,9 +257,14 @@ class RealWin32Test(unittest.TestCase):
             calls.append((argv, kwargs))
             return subprocess.CompletedProcess(argv, 0, stdout='{"cols": 239, "rows": 68}\n', stderr='')
         w = win32.RealWin32(all_dlls(), probe_argv=['pythonw.exe', 'sensor.exe', '--console-probe'], run=run)
-        self.assertEqual(w.console_size(950), (239, 68, None))
-        w.run = lambda argv, **k: subprocess.CompletedProcess(argv, 0, stdout='{"cols": 239, "rows": 68, "hwnd": 1800}', stderr='')
-        self.assertEqual(w.console_size(950), (239, 68, 1800))
+        self.assertEqual(w.console_size(950), (239, 68, None, None))
+        w.run = lambda argv, **k: subprocess.CompletedProcess(
+            argv, 0, stdout='{"cols": 239, "rows": 68, "hwnd": 1800, "cell": [8, 16]}', stderr='')
+        self.assertEqual(w.console_size(950), (239, 68, 1800, (8, 16)))
+        for cell in ('[0, 16]', '[8]', '"x"', '[8.5, 16]'):
+            w.run = lambda argv, **k: subprocess.CompletedProcess(
+                argv, 0, stdout='{"cols": 239, "rows": 68, "hwnd": 1800, "cell": %s}' % cell, stderr='')
+            self.assertEqual(w.console_size(950), (239, 68, 1800, None), cell)
         w.run = run
         self.assertEqual(calls[0][0], ['pythonw.exe', 'sensor.exe', '--console-probe', '950'])
         self.assertEqual(calls[0][1]['creationflags'], win32.DETACHED_PROCESS)
@@ -257,7 +277,11 @@ class RealWin32Test(unittest.TestCase):
         self.assertIsNone(w.console_size(950))
 
     def test_probe_console(self):
-        log = []
+        log, seen = [], []
+        def font(handle, maximum, p):
+            seen.append((handle, maximum, obj(p).cbSize))
+            obj(p).dwFontSize.X, obj(p).dwFontSize.Y = 8, 16
+            return 1
         def info(handle, p):
             window = obj(p).srWindow
             window.Left, window.Top, window.Right, window.Bottom = 0, 100, 238, 167
@@ -267,9 +291,13 @@ class RealWin32Test(unittest.TestCase):
                                       'CreateFileW': lambda name, *a: log.append(name) or 0x70,
                                       'GetConsoleScreenBufferInfo': info,
                                       'GetConsoleWindow': lambda: 0x1800,
+                                      'GetCurrentConsoleFontEx': font,
                                       'CloseHandle': lambda h: log.append(('close', h)) or 1})['kernel32']
-        self.assertEqual(win32.probe_console(950, kernel32), (239, 68, 0x1800))
+        self.assertEqual(win32.probe_console(950, kernel32), (239, 68, 0x1800, (8, 16)))
         self.assertEqual(log, ['free', ('attach', 950), 'CONOUT$', ('close', 0x70), 'free'])
+        self.assertEqual(seen, [(0x70, 0, ctypes.sizeof(structs.CONSOLE_FONT_INFOEX))])
+        kernel32.GetCurrentConsoleFontEx = lambda handle, maximum, p: 0 # no font: no pixel size later
+        self.assertEqual(win32.probe_console(950, kernel32), (239, 68, 0x1800, None))
         kernel32.AttachConsole = lambda pid: 0 # no console: the herdr server
         self.assertIsNone(win32.probe_console(951, kernel32))
 
@@ -478,24 +506,33 @@ class FindClientsTest(unittest.TestCase):
         self.assertIsNone(reason)
         self.assertTrue(clients[0]['foreground'])
 
-    def test_classic_console_reports_its_text_area(self):
+    def test_classic_console_reports_its_text_grid(self):
         owner = Process(850, 700, 'herdr.exe')
         procs = [Process(700, 1, 'explorer.exe'), owner]
-        def find(console, area, cls=logic.CONSOLE_CLASS, hwnd=0x1800):
-            return logic.find_clients(owner, cls, procs, TIMES, lambda pid: ['herdr'], sizes({850: console}),
-                                      owner_hwnd=hwnd, text_area=lambda h: area if h == 0x1800 else None)[0][0]
-        client = find((120, 30, 0x1800), (960, 480))
-        self.assertEqual((client['xpixel'], client['ypixel'], client['foreground']), (960, 480, True))
-        # Another console's window (a console handed to a new window), no
-        # console window, no client rect, or a size no text grid has: 0.
-        for console, area in (((120, 30, 0x1900), (960, 480)), ((120, 30), (960, 480)), ((120, 30, None), (960, 480)),
-                              ((120, 30, 0x1800), None), ((120, 30, 0x1800), (120, 30)), ((120, 30, 0x1800), (96000, 480))):
-            client = find(console, area)
-            self.assertEqual((client['xpixel'], client['ypixel']), (0, 0), (console, area))
+        def pixels(console, area, cls=logic.CONSOLE_CLASS, scale=1.0):
+            client = logic.find_clients(owner, cls, procs, TIMES, lambda pid: ['herdr'], sizes({850: console}),
+                                        owner_hwnd=0x1800, text_area=lambda h: area if h == 0x1800 else None,
+                                        window_scale=scale)[0][0]
+            self.assertTrue(client['foreground'])
+            return client['xpixel'], client['ypixel']
+        # cols x rows cells of the console font, from the client area's top-left.
+        self.assertEqual(pixels((120, 30, 0x1800, (8, 16)), (960, 480)), (960, 480))
+        # A client area with part of a cell left over (a maximised window): the grid only.
+        self.assertEqual(pixels((120, 30, 0x1800, (8, 16)), (967, 495)), (960, 480))
+        # A font size in 96-dpi pixels in a window at 150 %.
+        self.assertEqual(pixels((120, 30, 0x1800, (8, 16)), (1440, 720), scale=1.5), (1440, 720))
+        # Unsure: another console's window, no console window, no font cell, no
+        # client rect, a grid larger than the client area or a whole cell short of it.
+        for console, area in (((120, 30, 0x1900, (8, 16)), (960, 480)), ((120, 30), (960, 480)),
+                              ((120, 30, None, (8, 16)), (960, 480)), ((120, 30, 0x1800), (960, 480)),
+                              ((120, 30, 0x1800, None), (960, 480)), ((120, 30, 0x1800, (8, 16)), None),
+                              ((120, 30, 0x1800, (8, 16)), (950, 480)), ((120, 30, 0x1800, (8, 16)), (968, 480)),
+                              ((120, 30, 0x1800, (8, 16)), (960, 496))):
+            self.assertEqual(pixels(console, area), (0, 0), (console, area))
         # ConPTY: the console window is the hidden pseudo window, never the terminal's.
         clients, _ = logic.find_clients(self.owner, 'CASCADIA_HOSTING_WINDOW_CLASS', wt(1, herdr=[(950, 920)]), TIMES,
-                                        lambda pid: ['herdr'], sizes({950: (120, 30, 0x1800)}), owner_hwnd=0x1800,
-                                        text_area=lambda h: (960, 480))
+                                        lambda pid: ['herdr'], sizes({950: (120, 30, 0x1800, (8, 16))}),
+                                        owner_hwnd=0x1800, text_area=lambda h: (960, 480))
         self.assertEqual((clients[0]['xpixel'], clients[0]['ypixel'], clients[0]['foreground']), (0, 0, True))
 
     def test_handed_off_console_is_not_below_the_terminal(self):
@@ -638,6 +675,7 @@ class FakeWin32:
         self.lookups = 0
         self.argvs, self.envs, self.sessions = {}, {}, {}
         self.areas = {}
+        self.origins = {}
 
     def set_dpi_awareness(self): return self.dpi
     def virtual_screen(self): return Rect(-1920, 0, 3840, 1080)
@@ -658,6 +696,7 @@ class FakeWin32:
     def own_session(self): return 1
     def console_size(self, pid): return self.consoles.get(pid)
     def text_area(self, hwnd): return self.areas.get(hwnd)
+    def text_origin(self, hwnd): return self.origins.get(hwnd)
 
     def root_at(self, x, y):
         hit = next((w for w in self.windows if w.visible and w.bounds.contains(x, y)), None)
@@ -782,10 +821,11 @@ class SensorLoopTest(unittest.TestCase):
 
     def test_classic_console_click_carries_pixel_size_the_core_fits(self):
         from spring_load import geometry
-        console = top(0x700, 850, cls=logic.CONSOLE_CLASS, bounds=(0, 0, 962, 512), tid=51)
+        console = top(0x700, 850, cls=logic.CONSOLE_CLASS, bounds=(38, 52, 979, 512), tid=51)
         win = FakeWin32([EXPLORER, console], [Process(700, 1, 'explorer.exe'), Process(850, 700, 'herdr.exe')],
-                        {850: (120, 30, 0x700)})
+                        {850: (120, 30, 0x700, (8, 16))})
         win.areas = {0x700: (960, 480)}
+        win.origins = {0x700: (39, 83)}
         events, raw = run_script(win, [(0.03, {'x': 300, 'y': 200}), (0.09, {'held': True}), (0.03, {'held': False})])
         self.assertTrue(contract.check_stream(raw.splitlines())[0])
         window = contract.validate_event(events[1])['window']
@@ -794,6 +834,37 @@ class SensorLoopTest(unittest.TestCase):
         grid = geometry.fit((window['bounds']['width'], window['bounds']['height']), client, window['scale'])
         self.assertIsNotNone(grid)
         self.assertEqual((grid.cell_width, grid.cell_height), (8, 16))
+        self.assertEqual(client['grid_origin'], {'x': 1, 'y': 31})
+        self.assertEqual((grid.origin_x.low, grid.origin_y.low), (1, 31))
+        # Measurement failure must not turn into a guessed frame allowance.
+        win.origins.clear()
+        described = sensor.Sensor(win).describe(console, [], True)
+        self.assertEqual(described['clients'][0]['xpixel'], 0)
+
+    def test_console_resize_refreshes_cached_font_grid_before_lookup_ttl(self):
+        from spring_load import geometry
+        console = top(0x700, 850, cls=logic.CONSOLE_CLASS, bounds=(38, 52, 979, 512), tid=51)
+        win = FakeWin32([console], [Process(700, 1, 'explorer.exe'), Process(850, 700, 'herdr.exe')],
+                        {850: (120, 30, 0x700, (8, 16))})
+        win.areas = {0x700: (960, 480)}
+        win.origins = {0x700: (39, 83)}
+        reader = sensor.Sensor(win)
+        first = reader.describe(console, [], True)['clients'][0]
+        self.assertEqual(first['xpixel'], 960)
+        lookups = win.lookups
+        console.bounds.width, console.bounds.height = 1459, 752
+        win.areas[0x700] = (1440, 720)
+        win.consoles[850] = (120, 30, 0x700, (12, 24))
+        second = reader.describe(console, [], False)['clients'][0]
+        self.assertGreater(win.lookups, lookups)
+        self.assertEqual((second['xpixel'], second['ypixel']), (1440, 720))
+        grid = geometry.fit((1459, 752), second, 1.5)
+        self.assertEqual((grid.cell_width, grid.cell_height), (12, 24))
+        # Moving the window must refresh its screen origin without reusing its old position.
+        console.bounds.x, console.bounds.y = -800, -300
+        win.origins[0x700] = (-799, -269)
+        moved = reader.describe(console, [], False)['clients'][0]
+        self.assertEqual(moved['grid_origin'], {'x': 1, 'y': 31})
 
     def test_selection_inside_the_terminal_sends_nothing(self):
         win = FakeWin32([EXPLORER, TERMINAL], wt(1, herdr=[(950, 920)]), {950: (239, 68)})

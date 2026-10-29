@@ -42,6 +42,25 @@ class GeometryTest(unittest.TestCase):
         retina = geometry.fit((960, 600), {'cols': 100, 'rows': 30, 'xpixel': 1904, 'ypixel': 1080}, 2.0)
         self.assertAlmostEqual(retina.cell_width, 9.52)
 
+    def test_real_windows_console_frame_and_scrollbar(self):
+        # Real CI run 40906804772: its 19 px frame/scrollbar remainder was
+        # rejected despite a valid 120x30, 8x16 console grid.
+        client = {'cols': 120, 'rows': 30, 'xpixel': 960, 'ypixel': 480,
+                  'grid_origin': {'x': 1, 'y': 31}}
+        grid = geometry.fit((979, 512), client, 1.0)
+        self.assertIsNotNone(grid)
+        self.assertEqual((grid.cell_width, grid.cell_height), (8, 16))
+        self.assertEqual(grid.cells(1 + 119.5*8, 31 + 29.5*16), ((119,119), (29,29)))
+        # Only the measured grid gets this treatment; generic matching stays strict.
+        self.assertIsNone(geometry.fit((979,512), {k:v for k,v in client.items() if k!='grid_origin'},1.0))
+        for origin in ({'x':-1,'y':31}, {'x':20,'y':31}, {'x':1,'y':33},
+                       {'x':float('nan'),'y':31}, {'x':True,'y':31}):
+            self.assertIsNone(geometry.fit((979,512), {**client,'grid_origin':origin},1.0))
+        self.assertIsNone(geometry.fit((979,512),{**client,'xpixel':959},1.0))
+        other = {**client,'grid_origin':{'x':2,'y':31}}
+        self.assertNotEqual(geometry.calibration_key('conhost',(979,512),client),
+                            geometry.calibration_key('conhost',(979,512),other))
+
     def test_resolve_needs_agreement(self):
         model = render.Model(10, 10, [render.Target('pane', 'a', render.Rect(0, 1, 5, 9)), render.Target('pane', 'b', render.Rect(5, 1, 5, 9)),
                                       render.Target('tab', 't', render.Rect(0, 0, 10, 1))])

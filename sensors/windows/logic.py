@@ -5,7 +5,8 @@
 - pick_window: the topmost normal top-level window under the pointer.
 - find_clients: herdr client processes below a window owner, with the
   fail-safe rule for terminals that host several sessions in one process.
-- text_area_pixels: a classic console window's text area as xpixel/ypixel.
+- text_area_pixels: a classic console's text area (cells times the font's
+  cell size, bounded by the window's client area) as xpixel/ypixel.
 - all_clients: every herdr process of this logon session, for the core's
   exactly-one-client gate.
 - parse_environment: the contract's environment keys from an environment block."""
@@ -29,10 +30,6 @@ HERDR_NAMES = {'herdr', 'herdr.exe'}
 ENV_KEYS = ('HERDR_SESSION', 'HERDR_SOCKET_PATH', 'HERDR_CLIENT_SOCKET_PATH', 'HERDR_CONFIG_PATH',
             'XDG_CONFIG_HOME', 'XDG_STATE_HOME', 'HOME', 'APPDATA', 'LOCALAPPDATA', 'USERPROFILE')
 _ENV_KEYS_UPPER = {k.upper(): k for k in ENV_KEYS}
-# Plausible console cell sizes in physical pixels (a 5 pt font at 100 % up to
-# a 72 pt font at 300 %); a client area outside them is not a text area.
-CELL_WIDTH = (3, 200)
-CELL_HEIGHT = (6, 400)
 
 def parse_environment(block):
     """The allowed keys from a Windows environment block ("K=V\\0...\\0\\0", already
@@ -142,18 +139,29 @@ def client_entry(pid, argv, env, started, rows=None, cols=None, foreground=None,
     return {'pid': pid, 'argv': argv or [], 'tty': None, 'rows': rows, 'cols': cols, 'xpixel': xpixel, 'ypixel': ypixel,
             'foreground': foreground, 'started': started, 'env': env if argv else None}
 
-def text_area_pixels(area, cols, rows):
-    """(xpixel, ypixel) from a console window's client area (width, height) in
-    physical pixels, or (0, 0) when it cannot be this console's text grid."""
-    if not area or not cols or not rows:
+def text_area_pixels(cell, cols, rows, area, scale=None):
+    """(xpixel, ypixel) of a classic console's text grid in physical pixels:
+    cols and rows times the font's cell size (GetCurrentConsoleFontEx), which
+    conhost gives in the window's pixels, or in 96-dpi pixels to be scaled by
+    the window's DPI scale. The grid starts at the client area's top-left and
+    must fill it to within one cell (`area`, GetClientRect): the scrollbars
+    and the frame are outside it. (0, 0) when any of that is unknown or does
+    not agree, so the core refuses."""
+    if not cell or not area or not cols or not rows:
         return 0, 0
     width, height = area
-    if not (CELL_WIDTH[0] <= width / cols <= CELL_WIDTH[1] and CELL_HEIGHT[0] <= height / rows <= CELL_HEIGHT[1]):
-        return 0, 0
-    return int(width), int(height)
+    for factor in (1.0, scale) if scale and scale != 1.0 else (1.0,):
+        cell_w, cell_h = round(cell[0] * factor), round(cell[1] * factor)
+        if cell_w <= 0 or cell_h <= 0:
+            continue
+        grid_w, grid_h = cols * cell_w, rows * cell_h
+        if 0 <= width - grid_w < cell_w and 0 <= height - grid_h < cell_h:
+            return grid_w, grid_h
+    return 0, 0
 
 def find_clients(owner, owner_cls, processes, created, argv_of, console_size,
-                 env_of=lambda pid: None, started_of=lambda pid: None, owner_hwnd=None, text_area=lambda hwnd: None):
+                 env_of=lambda pid: None, started_of=lambda pid: None, owner_hwnd=None, text_area=lambda hwnd: None,
+                 window_scale=None):
     """Client objects (docs/SENSOR.md 2.1) for the herdr processes below `owner`.
 
     `foreground` is true only when the window provably shows that client: it
@@ -162,10 +170,10 @@ def find_clients(owner, owner_cls, processes, created, argv_of, console_size,
     refuses. This is the Windows Terminal multi-tab rule: hidden tabs keep
     their console size, so fitting the window proves nothing.
 
-    `console_size(pid)` gives (cols, rows) or (cols, rows, console hwnd).
-    xpixel/ypixel are the text area (`text_area(hwnd)`, the client rect in
-    physical pixels) only when the window is a classic console window and is
-    that client's own console; a ConPTY terminal (Windows Terminal and
+    `console_size(pid)` gives (cols, rows), optionally followed by the
+    console's window handle and its font cell size. xpixel/ypixel are the text
+    grid (text_area_pixels) only when the window is a classic console window
+    and is that client's own console; a ConPTY terminal (Windows Terminal and
     others) draws its text area itself, so there they stay 0 and the core
     refuses. Returns (clients, reason) where reason explains a refusal, or None."""
     parents = {p.pid: p.ppid for p in processes}
@@ -180,7 +188,8 @@ def find_clients(owner, owner_cls, processes, created, argv_of, console_size,
         cols, rows, *console = size
         xpixel = ypixel = 0
         if owner_cls == CONSOLE_CLASS and owner_hwnd is not None and console and console[0] == owner_hwnd:
-            xpixel, ypixel = text_area_pixels(text_area(owner_hwnd), cols, rows)
+            cell = console[1] if len(console) > 1 else None
+            xpixel, ypixel = text_area_pixels(cell, cols, rows, text_area(owner_hwnd), window_scale)
         argv = argv_of(p.pid)
         clients.append(client_entry(p.pid, argv, env_of(p.pid) if argv else None, started_of(p.pid),
                                     rows=rows, cols=cols, foreground=False, xpixel=xpixel, ypixel=ypixel))

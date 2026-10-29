@@ -51,7 +51,7 @@ tab once, or a different Space twice, without dragging anything. See
   (`TIOCGWINSZ` `ws_xpixel` and `ws_ypixel`). Most do. Without it nothing
   works, and the status says "no herdr client in this window matches its
   size (or the terminal reports no pixel size)". On Windows only a classic
-  console window gives one (the sensor reads its text area); Windows
+  console window gives one (the sensor measures its font grid and text origin); Windows
   Terminal and other ConPTY terminals do not, so they stay inert.
 - Per OS:
 
@@ -302,7 +302,7 @@ repository root:
 python3 -m unittest discover -s tests
 ```
 
-Result: 217 tests, 1 skipped (the opt-in isolated test below). They
+Result: 221 tests, 1 skipped (the opt-in isolated test below). They
 cover:
 
 - the replica against golden screens recorded from herdr 0.9.3, cell
@@ -337,7 +337,9 @@ client attached, nothing happens.
 On Windows, CI runs `tests/windows/e2e.py` with herdr 0.9.3 on a real
 Windows runner: the core drives herdr over its named pipe, the one-client
 gate holds, and a real classic console window gives a pixel size the core
-fits a grid to.
+fits a grid to. The check records the actual font cell, DPI and text origin,
+including native frame and scrollbar space, and verifies that ConPTY stays
+inactive with an explicit status message.
 
 On Linux, `sh tests/linux/run.sh` runs a real XDND drag in a Debian
 container (Xvfb, openbox, xterm running herdr 0.9.3, a GTK drag source) and

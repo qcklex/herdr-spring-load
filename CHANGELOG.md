@@ -30,8 +30,8 @@ observes, and selects through herdr's own API.
 - Windows sensor (experimental; the API, the gate and the grid fit run on
   real Windows in CI, a real drag has not): per-monitor DPI aware, a drag
   heuristic from the mouse capture and the cursor, the console size through
-  a short-lived probe, a classic console window's text area as the pixel
-  size, and the client environment from the process's PEB. Windows Terminal
+  a short-lived probe, a classic console's measured font-cell grid and text origin as the pixel
+  geometry, and the client environment from the process's PEB. Windows Terminal
   and other ConPTY terminals report no pixel size, so they stay inert. It is packed
   behind pip's script launcher and starts from a per-user Run key entry;
   the plugin entries are `status-windows`, `setup-windows` and
@@ -45,6 +45,13 @@ observes, and selects through herdr's own API.
   and why, how many window shapes are calibrated, and the last navigation.
 - Dwell times as setup options: `--tab-dwell-ms` (Spaces and tabs, default
   600) and `--pane-dwell-ms` (default 250).
+
+### Fixed
+- Classic Windows consoles with native scrollbars/frame margins now map to
+  their measured text grid instead of failing the generic terminal padding
+  limit. Geometry refreshes on frame, client-area or DPI changes; unknown
+  measurements and ConPTY remain inactive. The Windows end-to-end test checks
+  the actual font-cell size and the core's grid using a real console.
 
 ### Changed
 - Navigation acts only when exactly one local client is attached to the

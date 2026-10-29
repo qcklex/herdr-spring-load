@@ -117,7 +117,9 @@ def main():
         check.ok('client process listed', wait(lambda: any(p.pid == first.pid for p in herdr_processes())), first.pid)
         size = wait(lambda: win.console_size(first.pid), 10)
         check.ok('console size and console window through the probe child', size and size[2], size)
-        cols, rows, console_hwnd = size
+        cols, rows, console_hwnd, font_cell = size
+        check.ok('console reports positive font-cell dimensions',
+                 font_cell and all(v > 0 for v in font_cell), font_cell)
         argv = win.argv(first.pid)
         check.ok('client argv', argv and Path(argv[0]).name.lower() == 'herdr.exe' and len(argv) == 1, argv)
         client_env = win.environment(first.pid)
@@ -143,7 +145,8 @@ def main():
         check.ok('the console window is a classic console window', console.cls == logic.CONSOLE_CLASS,
                  {'class': console.cls, 'pid': console.pid, 'bounds': console.bounds.as_json()})
         check.note('console window', {'pid': console.pid, 'client pid': first.pid, 'bounds': console.bounds.as_json(),
-                                      'client area': win.text_area(console_hwnd), 'scale': win.scale(console_hwnd)})
+                                      'client area': win.text_area(console_hwnd), 'scale': win.scale(console_hwnd), 'raw font cell': font_cell,
+                                      'text origin': win.text_origin(console_hwnd)})
         described = contract.validate_window(reader.describe(console, [], True))
         listed = [c for c in described['clients'] or [] if c['pid'] == first.pid]
         check.ok('the sensor finds the client behind the console window', listed,
@@ -153,6 +156,8 @@ def main():
                  {k: client[k] for k in ('cols', 'rows', 'xpixel', 'ypixel', 'foreground')})
         bounds = described['bounds']
         grid = geometry.fit((bounds['width'], bounds['height']), client, described['scale'])
+        check.note('measured text grid', {'font cell': font_cell, 'pixels': (client['xpixel'], client['ypixel']),
+                                           'origin': client.get('grid_origin'), 'scale': described['scale']})
         check.ok('core geometry fits the real console window', grid and (grid.cols, grid.rows) == (cols, rows),
                  {'grid': grid, 'bounds': bounds, 'leftover': (bounds['width'] - client['xpixel'],
                                                              bounds['height'] - client['ypixel'])})

@@ -1,8 +1,10 @@
 # Windows sensor (experimental)
 
 The herdr-spring-load sensor for Windows, speaking contract 1 of
-`docs/SENSOR.md`. herdr on Windows is a beta (ConPTY), and this sensor has not
-run on Windows yet: everything here is unit tested on macOS with faked Win32.
+`docs/SENSOR.md`. herdr on Windows is a beta. CI exercises the sensor and
+core on real Windows with herdr 0.9.3; real Explorer/browser file drags still
+need manual verification. Navigation requires a classic console window.
+Windows Terminal and other ConPTY terminals remain inactive.
 
 Python 3.11+ standard library only (`ctypes` with user32, kernel32, dwmapi and
 ntdll). It observes and never acts: no hooks, no injected input, no reading of
@@ -77,14 +79,19 @@ client.
 
 Each client also carries:
 
-- `xpixel`, `ypixel`: the text area in physical pixels, the client rect
-  (`GetClientRect`, the sensor being per-monitor DPI aware) of a classic
-  console window (`ConsoleWindowClass`). Only when that window is the
-  client's own console, which the probe checks with `GetConsoleWindow`, and
-  only when the size gives a plausible cell (3 to 200 by 6 to 400 pixels).
-  Otherwise 0, and the core refuses: Windows Terminal and other ConPTY
-  terminals draw their text area themselves and expose no rect for it (their
-  console window is a hidden pseudo window).
+- `xpixel`, `ypixel`: the visible columns and rows from
+  `GetConsoleScreenBufferInfo`, multiplied by the font cell from
+  `GetCurrentConsoleFontEx`. Physical and DPI-scaled font cells are checked
+  against `GetClientRect`; the grid must fill it to within less than one
+  cell. Only a classic `ConsoleWindowClass` that matches the client's own
+  `GetConsoleWindow` is accepted. Missing or inconsistent measurements yield
+  zero pixels. Windows Terminal and other ConPTY terminals remain inactive.
+- `grid_origin`: the client area's `ClientToScreen` origin relative to the
+  window's DWM bounds, in physical pixels. This lets the core exclude the
+  native frame and scrollbar without guessing their widths. Frame/client
+  area/DPI changes invalidate cached font metrics before the next event;
+  origin is measured on every description. A failed origin measurement
+  clears pixel size, so navigation remains inactive.
 - `started`: the process creation time from `GetProcessTimes`, in seconds
   since the Unix epoch.
 - `env`: the contract's environment keys only (`HERDR_*`, `XDG_CONFIG_HOME`,
