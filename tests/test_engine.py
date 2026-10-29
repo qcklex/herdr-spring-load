@@ -15,9 +15,11 @@ import unittest
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 from spring_load import contract, engine as core, geometry, render
+sys.path.insert(0, str(ROOT/'tests'))
+from golden_fixture import load_golden
 
 GOLDEN_TEMP = tempfile.mkdtemp(prefix='sl-eg.')
-GOLDEN = json.loads((ROOT/'tests/golden/spaces_tabs.json').read_text().replace('$TEMP', GOLDEN_TEMP))
+GOLDEN = load_golden(ROOT/'tests/golden/spaces_tabs.json', GOLDEN_TEMP)
 CELL_W, CELL_H, TITLEBAR = 8, 20, 28
 
 class FakeHerdr:
