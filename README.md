@@ -38,12 +38,12 @@ enough to work right away.
 
 The plugin only selects; herdr and the terminal do everything else.
 
-- A small **sensor** only observes, without any permission: whether a drag
-  is held (the drag pasteboard's change count and the mouse buttons, never
-  its contents), the pointer position, the window under the pointer (its
-  frame and owning process from the window list), and the herdr client
-  processes behind that window (the process tree and each client tty's
-  size).
+- A small **sensor** per OS only observes, without any permission: whether
+  a drag is held (on macOS the drag pasteboard's change count and the mouse
+  buttons, on X11 the XDND selection owner; never the dragged data), the
+  pointer position, the window under the pointer (its frame and owning
+  process), and the herdr client processes behind that window (the process
+  tree and each client's terminal size).
 - A Python **core** (standard library only) replicates how herdr 0.9.3 lays
   out its sidebar, tab bar and panes, maps the pointer to a Space, tab or
   pane, and after the dwell time calls herdr's public `workspace.focus`,
@@ -57,16 +57,22 @@ See [DESIGN.md](DESIGN.md) for the details and
 
 ## Requirements
 
-- macOS. The core already runs on Linux and Windows; their sensors are in
-  progress.
 - herdr 0.9.3. The plugin acts only on herdr versions its replica was
   checked against, and does nothing on others.
-- Xcode Command Line Tools (`xcode-select --install`), used to compile the
-  sensor.
 - Python 3.11 or newer (the core reads herdr's TOML config with `tomllib`).
-  The `/usr/bin/python3` that ships with macOS is older; `brew install python`
-  provides a newer one. Setup looks for `python3.14` down to `python3.11`,
-  then `python3`, `/opt/homebrew/bin/python3` and `/usr/local/bin/python3`.
+- Per OS:
+
+| OS | Status | Also needs | Sensor |
+|---|---|---|---|
+| macOS | supported | Xcode Command Line Tools (`xcode-select --install`), to compile the sensor | Swift, no permission |
+| Linux | supported on X11 | a systemd user session (`systemctl --user`); nothing to compile | Python zipapp. Hyprland: windows and clients only, so it stays inert; other Wayland compositors: inert ([sensors/linux/README.md](sensors/linux/README.md)) |
+| Windows | **experimental**, not yet run on Windows | `python` on PATH with pip's launcher (`python -m ensurepip`) | Python behind pip's script launcher ([sensors/windows/README.md](sensors/windows/README.md)) |
+
+On macOS and Linux, setup looks for `python3.14` down to `python3.11`, then
+`python3`, `/opt/homebrew/bin/python3` and `/usr/local/bin/python3`. The
+`/usr/bin/python3` that ships with macOS is older; `brew install python`
+provides a newer one. On Windows herdr runs setup with the first `python`
+on PATH.
 
 ## Install
 
@@ -74,14 +80,22 @@ See [DESIGN.md](DESIGN.md) for the details and
 herdr plugin install qcklex/herdr-spring-load
 ```
 
-herdr shows its install preview, including the one build command
-(`sh scripts/build.sh`), and asks you to confirm. That build step:
+herdr shows its install preview, including the build command for your OS
+(`sh scripts/build.sh` on macOS and Linux, `python -B setup.py` on
+Windows), and asks you to confirm. That build step builds this OS's sensor,
+checks that it speaks the sensor contract, copies the core to the support
+folder and starts the helper (`python3 -m spring_load run`) as a per-user
+login service:
 
-- compiles the sensor with `xcrun swiftc` and checks that it speaks the
-  sensor contract;
-- copies the core to `~/Library/Application Support/herdr-spring-load`;
-- starts the per-user LaunchAgent `dev.qcklex.herdr-spring-load`
-  (`python3 -m spring_load run`), so it also starts at login.
+| OS | Sensor build | Support folder | Login service | Log |
+|---|---|---|---|---|
+| macOS | `xcrun swiftc` | `~/Library/Application Support/herdr-spring-load` | LaunchAgent `dev.qcklex.herdr-spring-load` | `~/Library/Logs/herdr-spring-load.log` |
+| Linux | zipapp, no compiler | `$XDG_DATA_HOME/herdr-spring-load` (default `~/.local/share/...`) | systemd user unit `dev.qcklex.herdr-spring-load.service`, wanted by `default.target` and `graphical-session.target` | in the support folder |
+| Windows (experimental) | zipapp behind pip's launcher | `%LOCALAPPDATA%\herdr-spring-load` | value `herdr-spring-load` under `HKCU\Software\Microsoft\Windows\CurrentVersion\Run`, run with `pythonw` (no console window); setup also starts it | in the support folder |
+
+On Linux the helper takes the display (`DISPLAY`, `WAYLAND_DISPLAY`) from
+the systemd user manager, which desktops fill in at login. If the manager
+has none when you install, setup passes on the one it sees.
 
 If any step fails, everything setup changed is put back and the previous
 install keeps running. Setup asks for no permission and signs nothing.
@@ -97,30 +111,34 @@ remove them.
 
 | Entry | Kind | What it does |
 |---|---|---|
-| Spring-load helper status | action `status` | Reports what the helper is doing, which targets are off and why, how many window shapes are calibrated, and the last navigation. Changes nothing. |
+| Spring-load helper status | action `status` | Reports whether the helper is running, what it is doing, which targets are off and why, how many window shapes are calibrated, and the last navigation. Changes nothing. |
 | Set up herdr-spring-load | pane `setup` | Runs the same setup as install again, in an overlay that waits for Enter. |
 | Remove herdr-spring-load helper | action `remove-helper` | Removes the helper. See [Uninstall](#uninstall). |
 
-From a shell:
+herdr rejects two entries with the same id, even for different platforms, so
+on Windows these are `status-windows`, `setup-windows` and
+`remove-helper-windows`, with "experimental" in their titles. From a shell:
 
 ```sh
-herdr plugin action invoke herdr-spring-load.status
+herdr plugin action invoke herdr-spring-load.status            # macOS, Linux
+herdr plugin action invoke herdr-spring-load.status-windows    # Windows
 ```
 
-Log: `~/Library/Logs/herdr-spring-load.log` (moved to `.log.old` at about
-1 MB).
+The log is moved to `.log.old` at about 1 MB.
 
 ## Uninstall
 
 herdr has no uninstall hook for plugins, so remove the helper first:
 
 ```sh
-herdr plugin action invoke herdr-spring-load.remove-helper
+herdr plugin action invoke herdr-spring-load.remove-helper     # Windows: remove-helper-windows
 herdr plugin uninstall herdr-spring-load
 ```
 
-The first command stops the helper and deletes its LaunchAgent, sensor, core
-copy and support files. From a clone, `sh helper/uninstall.sh` does the same.
+The first command stops the helper and deletes its login service (the
+LaunchAgent, the systemd unit and its `enable` links, or the Run key value),
+the sensor, the core copy and the support files. From a clone,
+`sh helper/uninstall.sh` (Windows: `python -B uninstall.py`) does the same.
 
 If you run `herdr plugin uninstall` first, the helper notices at the next
 file drags: when herdr no longer lists the plugin on two checks at least 3 s
@@ -132,7 +150,7 @@ same way. While the plugin is disabled, it pauses.
 - **One client per session.** With two clients attached to the same herdr
   session (two windows, or a local and a remote one), nothing happens: a
   focus call would move both.
-- **Finding the client.** The sensor finds herdr clients that run under the
+- **Finding the client (macOS).** The sensor finds herdr clients that run under the
   terminal app's own processes, inside tmux (through the window's tmux
   client), and in terminals whose sessions run in a separate server process
   (through macOS's responsible process). GNU screen, and other session
@@ -174,7 +192,9 @@ named pipes, the sensor contract, the macOS sensor (built and run through
 its test hooks: client lookup through the process tree, tmux and the
 responsible process), and install, update, uninstall, self-removal, rollback
 and 0.2.0 migration in a scratch HOME with stubbed `launchctl`, `xcrun` and
-herdr. One test checks that no shipped file asks for a permission or injects
+herdr. The Linux install (real sensor zipapp, stub `systemctl`), the Windows
+Run key service (fake `winreg`), and both merged sensors' own unit tests run
+in the same suite on macOS. One test checks that no shipped file asks for a permission or injects
 input.
 
 ```sh

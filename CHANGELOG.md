@@ -17,6 +17,17 @@ observes, and selects through herdr's own API.
   ordinary clicks and herdr's focus events, and herdr's public
   `workspace.focus`, `tab.focus` and `pane.focus` as the only actions.
 - The core reaches herdr over its named pipe on Windows.
+- Linux: an X11 sensor (stdlib Python, packed as a zipapp; Hyprland reports
+  windows and clients only, and stays inert), installed as a systemd user
+  unit. Install needs python3 only.
+- Windows (experimental, not yet run on Windows): a sensor packed behind
+  pip's script launcher, a per-user Run key login entry, and the
+  `status-windows`, `setup-windows` and `remove-helper-windows` entries.
+  Install runs `python -B setup.py`.
+- The manifest declares macos, linux and windows, with per-platform build
+  steps, actions and setup panes.
+- The status action says when the helper is not running (the core holds a
+  lock while it runs, so only one helper runs per user).
 - The status action reports which targets are off and why.
 
 ### Changed

@@ -19,7 +19,10 @@ import unittest
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
+import installer
 import legacy
+from spring_load.lock import held, try_lock
+from spring_load.paths import support_dir
 
 HELLO = '{"type":"hello","t":0,"contract":1,"sensor":"macos","version":"0.3.0","coords":"macos-points","capabilities":["drag","click","window","clients"]}'
 
@@ -257,8 +260,13 @@ class InstallTest(unittest.TestCase):
                                                             'reason': 'herdr 0.10.0 is not a version this replica was checked against'}))
         result = subprocess.run(['sh', str(ROOT/'scripts/build.sh'), '--status'], cwd=ROOT, env=self.env,
                                 stdin=subprocess.DEVNULL, capture_output=True, text=True, timeout=60)
-        self.assertIn('herdr-spring-load: idle', result.stdout)
+        self.assertIn('herdr-spring-load: not running', result.stdout)   # nothing holds helper.lock
         self.assertIn('0.10.0', result.stdout)
+        with open(self.support/'helper.lock', 'a') as held:   # what a running helper holds
+            self.assertTrue(try_lock(held))
+            result = subprocess.run(['sh', str(ROOT/'scripts/build.sh'), '--status'], cwd=ROOT, env=self.env,
+                                    stdin=subprocess.DEVNULL, capture_output=True, text=True, timeout=60)
+        self.assertIn('herdr-spring-load: idle', result.stdout)
 
     def test_uninstall_removes_everything(self):
         self.assertEqual(self.install().returncode, 0)
@@ -336,7 +344,8 @@ class ZeroPermissionTest(unittest.TestCase):
     def test_manifest_has_no_probe_actions_and_shipped_code_no_permissioned_api(self):
         manifest = tomllib.loads((ROOT/'herdr-plugin.toml').read_text())
         self.assertEqual(manifest['version'], '0.3.0')
-        self.assertEqual(sorted(a['id'] for a in manifest['actions']), ['remove-helper', 'status'])
+        self.assertEqual(sorted(a['id'] for a in manifest['actions']),
+                         ['remove-helper', 'remove-helper-windows', 'status', 'status-windows'])
         shipped = [*ROOT.glob('*.py'), *ROOT.glob('spring_load/*.py'), *ROOT.glob('sensors/*/*'), *ROOT.glob('scripts/*'),
                    *ROOT.glob('helper/*.sh')]
         for path in shipped:
@@ -348,6 +357,262 @@ class ZeroPermissionTest(unittest.TestCase):
             for word in ('osascript', 'AXUIElement', 'AXIsProcessTrusted', 'tccutil', 'CGEventPost', 'codesign',
                          'NSAppleScript', 'Ghostty', 'ghostty'):
                 self.assertFalse(word in text, f'{word} in {path.relative_to(ROOT)}')
+
+class ManifestPlatformTest(unittest.TestCase):
+    """herdr 0.9.3 runs every [[build]], action and pane whose `platforms`
+    include the host, and rejects duplicate ids even across platforms."""
+    def setUp(self):
+        self.manifest = tomllib.loads((ROOT/'herdr-plugin.toml').read_text())
+
+    def entries(self, section, platform):
+        return [e for e in self.manifest[section] if platform in e.get('platforms', self.manifest['platforms'])]
+
+    def test_each_platform_gets_one_build_status_removal_and_setup(self):
+        self.assertEqual(self.manifest['platforms'], ['macos', 'linux', 'windows'])
+        for platform in ('macos', 'linux', 'windows'):
+            with self.subTest(platform):
+                self.assertEqual(len(self.entries('build', platform)), 1)
+                actions = self.entries('actions', platform)
+                self.assertEqual(sorted(a['id'].removesuffix('-windows') for a in actions), ['remove-helper', 'status'])
+                self.assertEqual(len(self.entries('panes', platform)), 1)
+        for section in ('actions', 'panes'):
+            ids = [e['id'] for e in self.manifest[section]]
+            self.assertEqual(len(ids), len(set(ids)), f'duplicate {section} ids')
+
+    def test_commands_per_platform(self):
+        for platform in ('macos', 'linux'):
+            for section in ('build', 'actions', 'panes'):
+                for entry in self.entries(section, platform):
+                    self.assertEqual(entry['command'][0], 'sh', entry)
+                    self.assertTrue((ROOT/entry['command'][1]).is_file(), entry)
+        # Linux needs python3 only: build.sh picks the sensor by OS, and the Linux one is a zipapp.
+        self.assertNotIn('swift', (ROOT/'sensors/linux/build.py').read_text())
+        for section in ('build', 'actions', 'panes'):
+            for entry in self.entries(section, 'windows'):
+                self.assertEqual(entry['command'][:2], ['python', '-B'], entry)   # no sh on Windows
+                script = entry['command'][2]
+                self.assertTrue(script == '-m' or (ROOT/script).is_file(), entry)
+                if section != 'build':
+                    self.assertIn('experimental', entry['title'], entry)
+
+    def test_windows_status_runs_from_the_plugin_root(self):
+        temp = Path(tempfile.mkdtemp(prefix='sl-w.', dir='/private/tmp'))
+        self.addCleanup(shutil.rmtree, temp, True)
+        status = next(a for a in self.manifest['actions'] if a['id'] == 'status-windows')
+        result = subprocess.run([sys.executable, *status['command'][1:]], cwd=ROOT, stdin=subprocess.DEVNULL,
+                                env={'HOME': str(temp), 'PATH': '/usr/bin:/bin'}, capture_output=True, text=True, timeout=60)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn('no status yet', result.stdout)
+
+SYSTEMCTL = """#!/bin/sh
+echo "systemctl $*" >> "$FAKE_LOG"
+[ "$1" = --user ] || exit 2
+shift
+units="$XDG_CONFIG_HOME/systemd/user"
+case "$1" in
+  show-environment) [ -n "${FAKE_NO_USER_BUS:-}" ] && exit 1; echo "HOME=$HOME"; exit 0 ;;
+  is-active) if [ -f "$FAKE_DIR/active" ]; then echo active; exit 0; fi; echo inactive; exit 3 ;;
+  enable) [ -f "$units/$2" ] || exit 1; mkdir -p "$units/default.target.wants"
+          ln -sf "$units/$2" "$units/default.target.wants/$2"; exit 0 ;;
+  restart) [ -n "${FAKE_START_FAIL:-}" ] && { echo "Job failed" >&2; exit 1; }; cp "$units/$2" "$FAKE_DIR/active"; exit 0 ;;
+  stop) rm -f "$FAKE_DIR/active"; exit 0 ;;
+esac
+exit 0
+"""
+
+class LinuxInstallTest(unittest.TestCase):
+    """setup.py and uninstall.py as they run on Linux (sys.platform 'linux'),
+    with the real Linux sensor build (a python3 zipapp) and a stub systemctl
+    that keeps its state in the test's temp folder."""
+    def setUp(self):
+        self.temp = Path(tempfile.mkdtemp(prefix='sl-l.', dir='/private/tmp'))
+        self.addCleanup(shutil.rmtree, self.temp, True)
+        self.home = self.temp/'h'
+        self.home.mkdir()
+        self.bin = self.temp/'bin'
+        self.bin.mkdir()
+        self.fake = self.temp/'fake'
+        self.fake.mkdir()
+        for name, body in {'systemctl': SYSTEMCTL, 'herdr': STUBS['herdr']}.items():
+            (self.bin/name).write_text(body)
+            (self.bin/name).chmod(0o755)
+        self.log = self.temp/'calls.log'
+        self.env = {'HOME': str(self.home), 'XDG_CONFIG_HOME': str(self.temp/'c'), 'XDG_DATA_HOME': str(self.temp/'d'),
+                    'XDG_STATE_HOME': str(self.temp/'s'), 'DISPLAY': ':7', 'TMPDIR': str(self.temp),
+                    'PATH': f'{self.bin}:{Path(sys.executable).parent}:/usr/bin:/bin', 'FAKE_LOG': str(self.log),
+                    'FAKE_DIR': str(self.fake), 'LANG': 'C.UTF-8'}
+        self.support = self.temp/'d/herdr-spring-load'
+        self.unit = self.temp/'c/systemd/user/dev.qcklex.herdr-spring-load.service'
+        self.link = self.temp/'c/systemd/user/default.target.wants/dev.qcklex.herdr-spring-load.service'
+
+    def run_as_linux(self, script, *args, **env):
+        code = ('import runpy, sys; sys.platform = "linux"; sys.argv = [sys.argv[1], *sys.argv[2:]]; '
+                'sys.path.insert(0, str(__import__("pathlib").Path(sys.argv[0]).resolve().parent)); '
+                'runpy.run_path(sys.argv[0], run_name="__main__")')
+        return subprocess.run([sys.executable, '-c', code, str(script), *args], cwd=self.temp, env={**self.env, **env},
+                              stdin=subprocess.DEVNULL, capture_output=True, text=True, timeout=120)
+
+    def calls(self):
+        return self.log.read_text() if self.log.exists() else ''
+
+    def test_install_status_and_uninstall(self):
+        result = self.run_as_linux(ROOT/'setup.py')
+        self.assertEqual(result.returncode, 0, result.stderr)
+        sensor = self.support/'sensors/herdr-spring-load-sensor-linux'
+        self.assertTrue(os.access(sensor, os.X_OK))
+        self.assertTrue(sensor.read_bytes().startswith(b'#!/usr/bin/env python3'))
+        unit = self.unit.read_text()
+        lib = self.support/'lib'
+        self.assertIn(f'ExecStart="{sys.executable}" "-m" "spring_load" "run" "--tab-dwell-ms" "600"', unit)
+        self.assertIn(f'Environment="PYTHONPATH={lib}"', unit)
+        self.assertIn(f'Environment="PATH={Path(sys.executable).parent}:', unit)
+        self.assertIn('WantedBy=default.target graphical-session.target', unit)
+        self.assertNotIn('DISPLAY', unit, 'the display comes from the user manager, per login')
+        self.assertTrue(self.link.is_symlink())
+        self.assertTrue((self.fake/'active').exists())
+        calls = self.calls()
+        for expected in ('systemctl --user daemon-reload', 'systemctl --user enable dev.qcklex.herdr-spring-load.service',
+                         'systemctl --user restart dev.qcklex.herdr-spring-load.service'):
+            self.assertIn(expected, calls)
+        self.assertNotIn('swift', calls)
+        self.assertTrue((lib/'run_helper.py').exists())
+        # The installed sensor speaks the contract.
+        check = subprocess.run([str(sensor), '--check'], env={'PATH': self.env['PATH']}, capture_output=True, text=True,
+                               timeout=30)
+        self.assertEqual(json.loads(check.stdout)['type'], 'hello')
+
+        result = self.run_as_linux(ROOT/'uninstall.py')
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertFalse(self.unit.exists())
+        self.assertFalse(self.link.exists() or self.link.is_symlink(), 'enable links go with the unit')
+        self.assertFalse((self.fake/'active').exists())
+        self.assertFalse(self.support.exists())
+
+    def test_failed_start_rolls_back(self):
+        result = self.run_as_linux(ROOT/'setup.py', FAKE_START_FAIL='1')
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn('starting the helper service failed', result.stderr)
+        self.assertFalse(self.unit.exists())
+        self.assertFalse(self.link.exists() or self.link.is_symlink())
+        self.assertFalse((self.support/'lib').exists())
+        self.assertFalse((self.support/'sensors').exists())
+
+    def test_no_user_systemd_refuses_cleanly(self):
+        result = self.run_as_linux(ROOT/'setup.py', FAKE_NO_USER_BUS='1')
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn('no systemd user session', result.stderr)
+        self.assertFalse(self.unit.exists())
+        self.assertFalse((self.support/'lib').exists())
+
+    def test_display_is_passed_on_when_the_user_manager_has_none(self):
+        self.assertEqual(self.run_as_linux(ROOT/'setup.py').returncode, 0)
+        self.assertIn('systemctl --user import-environment DISPLAY', self.calls())
+
+class FakeWinreg:
+    HKEY_CURRENT_USER = 'HKCU'
+    REG_SZ = 1
+
+    def __init__(self):
+        self.values = {}
+
+    def CreateKey(self, root, path):
+        class Key:
+            def __enter__(self):
+                return (root, path)
+            def __exit__(self, *exc):
+                return False
+        return Key()
+
+    def SetValueEx(self, key, name, reserved, kind, value):
+        self.values[(key, name)] = value
+
+    def DeleteValue(self, key, name):
+        if (key, name) not in self.values:
+            raise FileNotFoundError(name)
+        del self.values[(key, name)]
+
+class WindowsServiceTest(unittest.TestCase):
+    """The experimental Windows Run key service, with a fake winreg."""
+    def setUp(self):
+        self.temp = Path(tempfile.mkdtemp(prefix='sl-r.', dir='/private/tmp'))
+        self.addCleanup(shutil.rmtree, self.temp, True)
+        self.winreg = FakeWinreg()
+        sys.modules['winreg'] = self.winreg
+        self.addCleanup(sys.modules.pop, 'winreg', None)
+        self.service = installer.RunKey(self.temp/'support')
+
+    def test_definition_uses_pythonw_and_the_lib_launcher(self):
+        python = self.temp/'Python311/python.exe'
+        python.parent.mkdir()
+        python.write_text('')
+        (python.parent/'pythonw.exe').write_text('')
+        lib = self.temp/'support/lib'
+        data = json.loads(self.service.definition(str(python), lib, ['--tab-dwell-ms', '600'], {'XDG_CONFIG_HOME': 'C:/c'}))
+        self.assertEqual(data['argv'], [str(python.parent/'pythonw.exe'), str(lib/'run_helper.py'), 'run', '--tab-dwell-ms', '600'])
+        self.assertEqual(data['env'], {'XDG_CONFIG_HOME': 'C:/c'})
+
+    def test_run_key_follows_the_definition_file(self):
+        self.service.plist.parent.mkdir(parents=True)
+        self.service.plist.write_text(json.dumps({'argv': ['C:/Py/pythonw.exe', 'C:/x y/lib/run_helper.py', 'run'], 'env': {}}))
+        self.service.reconcile()
+        self.assertEqual(self.winreg.values[(('HKCU', installer.RunKey.KEY), 'herdr-spring-load')],
+                         'C:/Py/pythonw.exe "C:/x y/lib/run_helper.py" run')
+        self.service.plist.unlink()
+        self.service.reconcile()
+        self.assertEqual(self.winreg.values, {})
+        self.service.reconcile()   # removing an absent value is fine
+
+    def test_loaded_is_the_helper_lock(self):
+        support = self.temp/'support'
+        support.mkdir()
+        self.assertFalse(self.service.loaded())
+        holder = subprocess.Popen([sys.executable, '-c', 'import sys, time; sys.path.insert(0, sys.argv[1]); '
+                                   'from spring_load.lock import try_lock; h = open(sys.argv[2], "a"); '
+                                   'assert try_lock(h); print("held", flush=True); time.sleep(30)',
+                                   str(ROOT), str(support/'helper.lock')], stdout=subprocess.PIPE, text=True)
+        self.addCleanup(holder.wait)
+        self.addCleanup(holder.kill)
+        self.assertEqual(holder.stdout.readline().strip(), 'held')
+        self.assertTrue(self.service.loaded())
+        holder.kill()
+        holder.wait()
+        holder.stdout.close()
+        self.assertFalse(self.service.loaded())
+
+class RunHelperTest(unittest.TestCase):
+    def test_runs_the_core_from_lib_with_the_recorded_env(self):
+        temp = Path(tempfile.mkdtemp(prefix='sl-h.', dir='/private/tmp'))
+        self.addCleanup(shutil.rmtree, temp, True)
+        lib = temp/'support/lib'
+        shutil.copytree(ROOT/'spring_load', lib/'spring_load', ignore=shutil.ignore_patterns('__pycache__'))
+        shutil.copy2(ROOT/'run_helper.py', lib/'run_helper.py')
+        recorded = temp/'recorded'
+        (temp/'support/service.json').write_text(json.dumps({'argv': [], 'env': {'HOME': str(recorded)}}))
+        # The status file exists only under the recorded HOME's support folder.
+        status = support_dir({'HOME': str(recorded), 'XDG_DATA_HOME': str(recorded/'data')})/'status.json'
+        status.parent.mkdir(parents=True)
+        status.write_text(json.dumps({'state': 'idle', 'sensor': 'test 1', 'updated': 0}))
+        result = subprocess.run([sys.executable, str(lib/'run_helper.py'), 'status'], cwd=temp, stdin=subprocess.DEVNULL,
+                                env={'HOME': str(temp), 'XDG_DATA_HOME': str(recorded/'data'), 'PATH': '/usr/bin:/bin'},
+                                capture_output=True, text=True, timeout=60)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn('sensor test 1', result.stdout, 'service.json env applied before the core started')
+        self.assertEqual(list(lib.rglob('__pycache__')), [])
+
+class InstanceLockTest(unittest.TestCase):
+    def test_second_helper_exits_and_status_sees_the_first(self):
+        temp = Path(tempfile.mkdtemp(prefix='sl-k.', dir='/private/tmp'))
+        self.addCleanup(shutil.rmtree, temp, True)
+        lock = temp/'helper.lock'
+        self.assertFalse(held(lock))
+        with open(lock, 'a') as first:
+            self.assertTrue(try_lock(first))
+            code = ('import sys; sys.path.insert(0, sys.argv[1]); from spring_load.lock import try_lock; '
+                    'print(try_lock(open(sys.argv[2], "a")))')
+            other = subprocess.run([sys.executable, '-c', code, str(ROOT), str(lock)], capture_output=True, text=True)
+            self.assertEqual(other.stdout.strip(), 'False')
+            self.assertTrue(held(lock))
+        self.assertFalse(held(lock))
 
 if __name__ == '__main__':
     unittest.main()

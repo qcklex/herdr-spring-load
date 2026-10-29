@@ -8,7 +8,11 @@ import sys
 import threading
 import time
 
+if sys.version_info < (3, 11):   # on Windows herdr runs this with whatever `python` is first on PATH
+    sys.exit('herdr-spring-load needs Python 3.11 or newer (for tomllib).')
+
 from .engine import Engine, Settings
+from .lock import held, try_lock
 from .paths import log_file, support_dir
 from .sensor import SensorError, SensorProcess, sensor_command
 
@@ -41,8 +45,19 @@ def run(args):
     argv = sensor_command(support)
     if argv is None:
         sys.exit('herdr-spring-load: no sensor is installed for this system; run the plugin setup again')
+    # One helper per user. Held until exit; setup, uninstall and status read it
+    # (on Windows, where no service manager tracks the process, also its pid).
+    support.mkdir(parents=True, exist_ok=True)
+    instance = open(support/'helper.lock', 'a')
+    if not try_lock(instance):
+        log('another herdr-spring-load helper is running; this one exits')
+        return
+    (support/'helper.pid').write_text(str(os.getpid()))
+    sensor = None
     def uninstall():
         state = json.loads((support/'state.json').read_text())
+        if sensor is not None:
+            sensor.close()   # Windows cannot delete a running sensor executable
         return subprocess.run([state['python'], state['uninstall'], '--self'], stdin=subprocess.DEVNULL, timeout=120).returncode
     while True:
         sensor = SensorProcess(argv, log=log)
@@ -67,7 +82,11 @@ def status(args):
         print('herdr-spring-load: no status yet. Is the helper running? Open the "Set up herdr-spring-load" pane to (re)install it.')
         return
     age = time.time() - data.get('updated', 0)
-    print(f'herdr-spring-load: {data.get("state")} (sensor {data.get("sensor") or "?"}, updated {int(age)} s ago)')
+    running = held(support_dir()/'helper.lock')
+    print(f'herdr-spring-load: {data.get("state") if running else "not running"} '
+          f'(sensor {data.get("sensor") or "?"}, updated {int(age)} s ago)')
+    if not running:
+        print('  the helper is not running; open the "Set up herdr-spring-load" pane to start it again')
     if data.get('reason'):
         print(f'  last note: {data["reason"]}')
     for kind, why in (data.get('refused') or {}).items():

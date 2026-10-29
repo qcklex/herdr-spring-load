@@ -3,28 +3,58 @@ name = "herdr-spring-load"
 version = "0.3.0"
 min_herdr_version = "0.9.3"
 description = "Spring-loaded drag and drop: while you hold a file, hovering a space, tab or pane opens it; the terminal takes the drop"
-platforms = ["macos"]
+platforms = ["macos", "linux", "windows"]
 
-# Builds and checks the sensor, installs the core and starts the login
-# service. No OS permission, no config edits. Transactional.
+# Builds and checks this OS's sensor, installs the core and starts the login
+# service. No OS permission, no config edits. Transactional. macOS compiles the
+# sensor with swiftc; Linux needs only python3 (the sensor is a zipapp).
 [[build]]
 command = ["sh", "scripts/build.sh"]
-platforms = ["macos"]
+platforms = ["macos", "linux"]
+
+# Windows (experimental): no sh, so setup runs on the python found on PATH.
+[[build]]
+command = ["python", "-B", "setup.py"]
+platforms = ["windows"]
 
 [[actions]]
 id = "status"
 title = "Spring-load helper status"
 contexts = ["workspace"]
+platforms = ["macos", "linux"]
 command = ["sh", "scripts/build.sh", "--status"]
 
 [[actions]]
 id = "remove-helper"
 title = "Remove herdr-spring-load helper (run before herdr plugin uninstall)"
 contexts = ["workspace"]
+platforms = ["macos", "linux"]
 command = ["sh", "helper/uninstall.sh"]
+
+[[actions]]
+id = "status-windows"
+title = "Spring-load helper status (experimental on Windows)"
+contexts = ["workspace"]
+platforms = ["windows"]
+command = ["python", "-B", "-m", "spring_load", "status"]
+
+[[actions]]
+id = "remove-helper-windows"
+title = "Remove herdr-spring-load helper (experimental on Windows; run before herdr plugin uninstall)"
+contexts = ["workspace"]
+platforms = ["windows"]
+command = ["python", "-B", "uninstall.py"]
 
 [[panes]]
 id = "setup"
 title = "Set up herdr-spring-load"
 placement = "overlay"
+platforms = ["macos", "linux"]
 command = ["sh", "scripts/build.sh", "--pause"]
+
+[[panes]]
+id = "setup-windows"
+title = "Set up herdr-spring-load (experimental on Windows)"
+placement = "overlay"
+platforms = ["windows"]
+command = ["python", "-B", "setup.py", "--pause"]

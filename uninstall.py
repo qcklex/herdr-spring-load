@@ -7,16 +7,18 @@ core itself (--self) once herdr no longer lists the plugin. Transactional up to
 the point where files are deleted: a config that cannot be restored changes
 nothing."""
 import argparse
-import fcntl
 import json
 import os
 from pathlib import Path
 import shutil
-import signal
 import subprocess
 import sys
 
-from installer import Interrupted, SetupError, Transaction, file_mode, interrupt, real_path, service_for, support_dir
+if sys.version_info < (3, 11):   # on Windows herdr runs this with whatever `python` is first on PATH
+    sys.exit('herdr-spring-load needs Python 3.11 or newer (for tomllib); nothing was changed.')
+
+from installer import (Interrupted, SetupError, Transaction, catch_signals, file_mode, real_path, service_for, support_dir,
+                       try_lock)
 import legacy
 from spring_load.clients import herdr_dirs
 
@@ -27,8 +29,7 @@ def main():
     parser.add_argument('--self', action='store_true', help='run by the helper after herdr uninstalled the plugin')
     parser.add_argument('--purge', action='store_true', help='accepted for 0.2.0 compatibility; everything is removed anyway')
     parser.parse_args()
-    for signum in (signal.SIGTERM, signal.SIGHUP):
-        signal.signal(signum, interrupt)
+    catch_signals()
     support = support_dir()
     state_file = support/'state.json'
     try:
@@ -43,10 +44,13 @@ def main():
     lock = None
     if support.exists():
         lock = open(support/'setup.lock', 'w')
-        try:
-            fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
-        except BlockingIOError:
+        if not try_lock(lock):
             raise SetupError('a herdr-spring-load setup is running; try again when it finishes')
+    # Run by hand, stop the helper first: Windows cannot delete a running
+    # sensor. Run by the helper itself (--self), it has closed its sensor, and
+    # stopping it would end this script, so that waits until the end.
+    if service is not None and not parse_self() and service.loaded():
+        service.stop(timeout=10)
     transaction = Transaction()
     try:
         if restored:
@@ -59,6 +63,11 @@ def main():
         transaction.rollback()
         raise
     transaction.commit()
+    if service is not None:
+        try:
+            service.reconcile()   # systemd: drop the unit's links; Windows: the Run key value
+        except (OSError, SetupError):
+            pass
     if restored:
         from spring_load.herdr_api import request
         legacy.reload_sessions(herdr_dirs(os.environ)[0], request)
@@ -70,10 +79,13 @@ def main():
         for entry in support.iterdir():
             if entry.name in KEEP:
                 continue
-            if entry.is_dir() and not entry.is_symlink():
-                shutil.rmtree(entry, ignore_errors=True)
-            else:
-                entry.unlink(missing_ok=True)
+            try:
+                if entry.is_dir() and not entry.is_symlink():
+                    shutil.rmtree(entry, ignore_errors=True)
+                else:
+                    entry.unlink(missing_ok=True)
+            except OSError:
+                pass   # Windows: helper.lock while the helper (--self) still holds it
     if lock:
         lock.close()
         (support/'setup.lock').unlink(missing_ok=True)

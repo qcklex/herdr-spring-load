@@ -118,9 +118,14 @@ directory or its git HEAD changes.
 
 ## 7. Setup
 
-`herdr plugin install` runs `sh scripts/build.sh` in a temporary checkout
-before registering the plugin, with stdin closed. `build.sh` finds Python
-3.11 or newer and runs `setup.py`, which is one transaction (every step
+`herdr plugin install` runs the manifest's `[[build]]` step for the host
+platform in a temporary checkout before registering the plugin, with stdin
+closed: `sh scripts/build.sh` on macOS and Linux, which finds Python 3.11 or
+newer, and `python -B setup.py` on Windows, where there is no `sh` and
+`setup.py` checks the version itself. herdr 0.9.3 rejects duplicate action
+and pane ids even across platforms, so the Windows entries have their own
+ids (`status-windows`, `remove-helper-windows`, `setup-windows`). `setup.py`
+is one transaction (every step
 registers its undo; a failure or SIGTERM rolls everything back):
 
 1. Take `setup.lock`. If 0.2.0's keybindings are in the config, work out the
@@ -132,18 +137,38 @@ registers its undo; a failure or SIGTERM rolls everything back):
    the chosen Python.
 4. Only now stop the previous service, and swap in `sensors/` and `lib/`.
 5. Write `state.json`, apply 0.2.0's config restoration if needed, write the
-   LaunchAgent and start it.
+   service definition and start it. A rollback leaves the service manager
+   matching the restored files (`reconcile`).
 6. After commit, delete 0.2.0's signing keychain if present.
 
-No permission, no signing, no config edit (beyond undoing 0.2.0's). The
-service is behind a small registry in `installer.py`, so a systemd user unit
-or a Windows equivalent can be added next to `Launchd`.
+No permission, no signing, no config edit (beyond undoing 0.2.0's).
+
+Login services (`installer.SERVICES`), none needing administrator rights:
+
+| OS | Service | Running | Stop |
+|---|---|---|---|
+| macOS | LaunchAgent, `KeepAlive` on failure, Aqua sessions only | `launchctl print` | `launchctl bootout` |
+| Linux | systemd user unit, wanted by `default.target` and `graphical-session.target`, `Restart=on-failure` | `systemctl --user is-active` | `systemctl --user stop` |
+| Windows (experimental) | `HKCU\...\CurrentVersion\Run` value running `pythonw lib/run_helper.py run`; setup also starts it detached | the core's `helper.lock` is held | `taskkill /T` of the pid in `helper.pid` |
+
+The Linux unit bakes in no display: a start before the desktop has published
+`DISPLAY` or `WAYLAND_DISPLAY` to the user manager gets an inert sensor and
+exits, and `graphical-session.target` starts it again once the session is
+up. A Run key holds a bare command line, so `run_helper.py` puts `lib` on
+`sys.path` and applies the variables setup recorded in `service.json`.
+
+On every OS the core takes an exclusive lock on `helper.lock` (`fcntl.flock`,
+or `msvcrt.locking` on Windows) and writes `helper.pid`: one helper per user,
+and the status action reports "not running" when nothing holds the lock.
 
 ## 8. Removal and the missing uninstall hook
 
 `uninstall.py` stops the service and deletes its definition, the sensor, the
 core copy and the support files, restoring 0.2.0's config edits if they are
-still there. Because herdr deletes the checkout on uninstall, the core reads
+still there. Run by hand it stops the helper first (Windows cannot delete a
+running sensor); run by the helper (`--self`), the helper has closed its
+sensor and is stopped last. Because herdr deletes the checkout on
+uninstall, the core reads
 herdr's `plugins.json` when a drag starts:
 
 | Registry state | Action |

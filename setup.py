@@ -1,34 +1,37 @@
 #!/usr/bin/env python3
 """Install or update herdr-spring-load 0.3.0. Run by herdr plugin install
-([[build]]), by the setup pane, or by helper/install.sh. Transactional: a
-failure leaves the previous install in place.
+([[build]]: through scripts/build.sh on macOS and Linux, directly with
+`python` on Windows), by the setup pane, or by helper/install.sh.
+Transactional: a failure leaves the previous install in place.
 
 What it does: builds this OS's sensor and checks it (`--check`), copies the
 core (spring_load/, stdlib only) to the support folder, and starts the login
-service that runs `python3 -m spring_load run`. It asks for no OS permission,
+service that runs `python3 -m spring_load run` (installer.py: a LaunchAgent, a
+systemd user unit, or on Windows, experimentally, a per-user Run key entry). It asks for no OS permission,
 signs nothing and does not edit herdr's config. The one exception is migration:
 an install of 0.2.0 left private keybindings in config.toml, a signing keychain
 and a terminal-specific helper; those are removed again (legacy.py)."""
 import argparse
-import fcntl
 import importlib.util
 import json
 import os
 from pathlib import Path
 import shutil
-import signal
 import subprocess
 import sys
 import tempfile
 
-from installer import (LABEL, ROOT, SEEN, VERSION, Interrupted, SetupError, Transaction, file_mode, interrupt, real_path,
-                       run, service_for, support_dir)
+if sys.version_info < (3, 11):   # build.sh checks first; on Windows herdr runs this directly
+    sys.exit('herdr-spring-load needs Python 3.11 or newer (for tomllib); nothing was changed.')
+
+from installer import (LABEL, ROOT, SEEN, VERSION, Interrupted, SetupError, Transaction, catch_signals, file_mode,
+                       real_path, run, service_for, support_dir, try_lock)
 import legacy
 from spring_load import contract
 from spring_load.clients import herdr_dirs
 from spring_load.sensor import platform_key
 
-LIB_FILES = ('installer.py', 'legacy.py', 'uninstall.py')
+LIB_FILES = ('installer.py', 'legacy.py', 'uninstall.py', 'run_helper.py')
 ENV_KEYS = ('HERDR_CONFIG_PATH', 'XDG_CONFIG_HOME', 'XDG_STATE_HOME', 'XDG_DATA_HOME')
 
 def build_sensor(out):
@@ -58,8 +61,8 @@ def stage_lib(folder):
     shutil.copytree(ROOT/'spring_load', folder/'spring_load', ignore=shutil.ignore_patterns('__pycache__'))
     for name in LIB_FILES:
         shutil.copy2(ROOT/name, folder/name)
-    check = run([sys.executable, '-c', 'import spring_load.__main__, installer, legacy, uninstall'], cwd=str(folder),
-                env={'PYTHONPATH': str(folder), 'PATH': os.environ.get('PATH', '/usr/bin:/bin'), 'PYTHONDONTWRITEBYTECODE': '1'})
+    check = run([sys.executable, '-c', 'import spring_load.__main__, installer, legacy, uninstall, run_helper'],
+                cwd=str(folder), env={**os.environ, 'PYTHONPATH': str(folder), 'PYTHONDONTWRITEBYTECODE': '1'})
     if check.returncode != 0:
         raise SetupError(f'the core does not load with {sys.executable}: {check.stderr.strip()[-300:]}')
 
@@ -85,6 +88,15 @@ def apply_legacy_config(transaction, found):
     from spring_load.herdr_api import request
     return legacy.reload_sessions(herdr_dirs(os.environ)[0], request)
 
+def service_path():
+    """PATH for the login service. On Linux the sensor is a python3 zipapp
+    (`#!/usr/bin/env python3`), so this Python's folder comes first."""
+    if sys.platform == 'darwin':
+        return {'PATH': '/usr/bin:/bin:/usr/sbin:/sbin'}
+    if sys.platform.startswith('linux'):
+        return {'PATH': f'{Path(sys.executable).parent}:/usr/local/bin:/usr/bin:/bin'}
+    return {}   # Windows: the Run key's process inherits the user's PATH
+
 def other_spring_helpers(home):
     agents = home/'Library/LaunchAgents'
     return sorted(p.name for p in agents.glob('*focus-pane*.plist')) if agents.is_dir() else []
@@ -100,16 +112,13 @@ def install(args):
     if args.check:
         print('Check only: nothing changed.')
         return
-    for signum in (signal.SIGTERM, signal.SIGHUP):
-        signal.signal(signum, interrupt)
+    catch_signals()
     transaction = Transaction()
     transaction.mkdir(support)
     lock = open(support/'setup.lock', 'w')
     was_loaded = False
     try:
-        try:
-            fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
-        except BlockingIOError:
+        if not try_lock(lock):
             raise SetupError('another herdr-spring-load setup is running')
         state_file = support/'state.json'
         try:
@@ -148,9 +157,10 @@ def install(args):
         transaction.write(state_file, json.dumps(state, indent=1).encode(), 0o600)
         reloaded = apply_legacy_config(transaction, found) if found else []
         env = {k: v for k, v in os.environ.items() if k in ENV_KEYS}
-        env['PATH'] = '/usr/bin:/bin:/usr/sbin:/sbin'
+        env.update(service_path())
         dwell = ['--tab-dwell-ms', str(args.tab_dwell_ms), '--pane-dwell-ms', str(args.pane_dwell_ms)]
         transaction.write(service.plist, service.definition(sys.executable, lib, dwell, env), 0o644)
+        transaction.after.append(service.reconcile)   # a rollback leaves the service manager matching the files
         service.start()
         transaction.undo.append(lambda: service.stop(timeout=5))
     except BaseException:
