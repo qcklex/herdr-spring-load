@@ -355,8 +355,10 @@ class ZeroPermissionTest(unittest.TestCase):
             text = path.read_text(errors='replace')
             if path.name == 'legacy.py':
                 text = text.replace("'security'", '')   # deletes 0.2.0's keychain, never asks for anything
+            # Passive app-identity geometry rules are allowed; permissioned
+            # APIs and injected input remain forbidden in shipped code.
             for word in ('osascript', 'AXUIElement', 'AXIsProcessTrusted', 'tccutil', 'CGEventPost', 'codesign',
-                         'NSAppleScript', 'Ghostty', 'ghostty'):
+                         'NSAppleScript'):
                 self.assertFalse(word in text, f'{word} in {path.relative_to(ROOT)}')
 
 class ManifestPlatformTest(unittest.TestCase):

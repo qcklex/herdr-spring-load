@@ -32,6 +32,47 @@ class GeometryTest(unittest.TestCase):
             legacy.data = {'k': [0, 1, 22, 25]}
             self.assertEqual(legacy.apply('k', grid).origin_y.high, 25, 'the first 0.3.0 format still loads')
 
+    def test_ghostty_resize_reuses_only_compatible_precise_offsets(self):
+        with tempfile.TemporaryDirectory() as temp:
+            cal = geometry.Calibration(Path(temp)/'c.json')
+            old = {'cols':126,'rows':54,'xpixel':1013,'ypixel':928}
+            new = {'cols':272,'rows':67,'xpixel':2179,'ypixel':1141}
+            app = 'com.mitchellh.ghostty'
+            old_key = geometry.calibration_key(app,(1017,964),old)
+            key = geometry.calibration_key(app,(2183,1177),new)
+            cal.data[old_key] = {'origin':[0,4,31,36], 'candidate':None}
+            grid = geometry.fit((2183,1177),new,1)
+            precise = cal.apply(key,grid)
+            self.assertEqual(precise.origin_y,geometry.Interval(31,36))
+            self.assertEqual(geometry.Calibration(cal.path).apply(key,grid).origin_y,precise.origin_y)
+            # A pane-only observation for the new size must also be refined.
+            cal.data[key] = {'origin':[0,4,0,36], 'candidate':None}
+            self.assertEqual(cal.apply(key,grid).origin_y,geometry.Interval(31,36))
+
+    def test_ghostty_resize_refuses_changed_chrome_fonts_and_conflicting_offsets(self):
+        with tempfile.TemporaryDirectory() as temp:
+            cal = geometry.Calibration(Path(temp)/'c.json')
+            old = {'cols':126,'rows':54,'xpixel':1013,'ypixel':928}
+            app='com.mitchellh.ghostty'
+            old_key=geometry.calibration_key(app,(1017,964),old)
+            cal.data[old_key]={'origin':[0,4,31,36],'candidate':None}
+            for owner,bounds,client in (
+                (app,(2183,1145),{'cols':272,'rows':67,'xpixel':2179,'ypixel':1141}),
+                (app,(2183,1244),{'cols':272,'rows':67,'xpixel':2179,'ypixel':1208}),
+                ('another.terminal',(2183,1177),{'cols':272,'rows':67,'xpixel':2179,'ypixel':1141}),
+            ):
+                grid=geometry.fit(bounds,client,1)
+                self.assertEqual(cal.apply(geometry.calibration_key(owner,bounds,client),grid),grid)
+            client={'cols':272,'rows':67,'xpixel':2179,'ypixel':1141}
+            grid=geometry.fit((2183,1177),client,1)
+            key=geometry.calibration_key(app,(2183,1177),client)
+            other={'cols':200,'rows':60,'xpixel':1602,'ypixel':1022}
+            cal.data[geometry.calibration_key(app,(1606,1058),other)]={'origin':[0,4,1,5],'candidate':None}
+            self.assertEqual(cal.apply(key,grid),grid,'inconsistent chrome offsets cannot be transferred')
+            cal.data.pop(geometry.calibration_key(app,(1606,1058),other))
+            cal.data[key]={'origin':[0,4,0,36],'candidate':[0,4,0,3]}
+            self.assertEqual(cal.apply(key,grid),grid,'a pending disagreement must not be overwritten')
+
     def test_fit_picks_the_unit_and_refuses_ambiguity(self):
         client = {'cols': 239, 'rows': 68, 'xpixel': 1916, 'ypixel': 1160}
         grid = geometry.fit((1920, 1164), client, 2.0)

@@ -130,7 +130,60 @@ class Calibration:
         """How many window shapes have a confirmed origin."""
         return sum(1 for key in self.data if self.entry(key)[0] is not None)
 
+    def resized_origin(self, key, grid):
+        """Ghostty keeps its chrome and padding when only the window size
+        changes. Reuse precise observations only for the same measured chrome
+        budget and integer font metrics. Fullscreen, font/style changes and
+        contradictory observations require their own calibration.
+        """
+        parts = key.split('|')
+        if len(parts) != 7 or parts[0] != 'com.mitchellh.ghostty':
+            return None
+        current, candidate = self.entry(key)
+        if candidate is not None or (current is not None and current[1].width <= grid.cell_height / 2):
+            return None
+        origins = []
+        for previous in list(self.data)[-128:]:
+            if previous == key:
+                continue
+            fields = previous.split('|')
+            if len(fields) != 7 or fields[0] != parts[0]:
+                continue
+            stored, pending = self.entry(previous)
+            if stored is None or pending is not None:
+                continue
+            try:
+                width,height,cols,rows,xpixel,ypixel = map(float,fields[1:])
+                old = fit((width,height),{'cols':cols,'rows':rows,'xpixel':xpixel,'ypixel':ypixel})
+            except (ValueError,TypeError,OverflowError):
+                continue
+            if old is None or stored[1].width > old.cell_height / 2:
+                continue
+            if (math.floor(old.cell_width),math.floor(old.cell_height)) != (math.floor(grid.cell_width),math.floor(grid.cell_height)):
+                continue
+            if abs(old.origin_x.high-grid.origin_x.high) > 0.5 or abs(old.origin_y.high-grid.origin_y.high) > 0.5:
+                continue
+            origins.append(stored)
+        if not origins:
+            return None
+        # Keep the full range of compatible observations, never pick whichever
+        # offset happens to match the pointer. Inconsistent styles stay inert.
+        x = Interval(min(o[0].low for o in origins),max(o[0].high for o in origins))
+        y = Interval(min(o[1].low for o in origins),max(o[1].high for o in origins))
+        if x.low < grid.origin_x.low or x.high > grid.origin_x.high or y.low < grid.origin_y.low or y.high > grid.origin_y.high:
+            return None
+        if current is not None:
+            x,y = x.intersect(current[0]),y.intersect(current[1])
+        if x.empty or y.empty or y.width > grid.cell_height / 2:
+            return None
+        return x,y
+
     def apply(self, key, grid):
+        inherited = self.resized_origin(key,grid)
+        if inherited is not None:
+            x,y = inherited
+            self.data[key] = {'origin':[x.low,x.high,y.low,y.high], 'candidate':None}
+            self.save()
         origin, _ = self.entry(key)
         if origin is None:
             return grid
