@@ -220,6 +220,8 @@ class Engine:
                 raise Unavailable(None)
             context = self.context_for(window, event['x'], event['y'])
             target = geometry.resolve(context.model, context.grid, event['x'] - window['bounds']['x'], event['y'] - window['bounds']['y'])
+            if target is not None and window.get('tab_only') and target.kind != 'tab':
+                target = None
             if target is not None and self.is_focused(context.snapshot, target):
                 target = None
             self.hover = target

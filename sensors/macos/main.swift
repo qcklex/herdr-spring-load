@@ -393,6 +393,32 @@ struct WindowInfo {
     let bounds: CGRect
 }
 
+/// AppKit keeps Ghostty's native fullscreen toolbar in a separate 32-point
+/// window, even when it is transparent over terminal content. Match only a
+/// single same-owner, full-display parent; never look through another app.
+func ghosttyFullscreenParent(_ strip: WindowInfo, windows: [WindowInfo], displays: [CGRect],
+                             isGhostty: (Int32) -> Bool) -> WindowInfo? {
+    guard isGhostty(strip.pid), strip.bounds.height >= 8, strip.bounds.height <= 64 else { return nil }
+    func close(_ a: CGFloat, _ b: CGFloat) -> Bool { abs(a-b) <= 1 }
+    let parents = windows.filter { parent in
+        parent.pid == strip.pid && parent.id != strip.id && parent.bounds.height >= 400 && parent.bounds.width >= 800
+        && close(parent.bounds.minX,strip.bounds.minX) && close(parent.bounds.minY,strip.bounds.minY)
+        && close(parent.bounds.width,strip.bounds.width)
+        && displays.contains { display in
+            close(parent.bounds.minX,display.minX) && close(parent.bounds.minY,display.minY)
+            && close(parent.bounds.width,display.width) && close(parent.bounds.height,display.height)
+        }
+    }
+    return parents.count == 1 ? parents[0] : nil
+}
+
+func displayRects() -> [CGRect] {
+    var displays = [CGDirectDisplayID](repeating: 0, count: 32)
+    var count: UInt32 = 0
+    guard CGGetActiveDisplayList(UInt32(displays.count), &displays, &count) == .success else { return [] }
+    return displays.prefix(Int(count)).map { CGDisplayBounds($0) }
+}
+
 func normalWindows() -> [WindowInfo] {
     guard let list = CGWindowListCopyWindowInfo([.optionOnScreenOnly, .excludeDesktopElements], kCGNullWindowID)
             as? [[String: Any]] else { return [] }
@@ -441,14 +467,25 @@ func appName(_ pid: Int32) -> Any {
 /// (description, id) of the topmost normal window under `point`.
 func window(at point: CGPoint, forceClients: Bool = false) -> ([String: Any]?, UInt32?) {
     let windows = normalWindows()
-    guard let hit = windows.first(where: { $0.bounds.contains(point) }) else { return (nil, nil) }
+    guard let front = windows.first(where: { $0.bounds.contains(point) }) else { return (nil, nil) }
+    let displays = displayRects()
+    let isGhostty: (Int32) -> Bool = { appName($0) as? String == "com.mitchellh.ghostty" }
+    let parent = ghosttyFullscreenParent(front, windows: windows, displays: displays, isGhostty: isGhostty)
+    let hit = parent ?? front
+    let tabOnly = parent != nil
+    // Never interpret the native traffic lights or new-tab edge as herdr tabs.
+    if tabOnly && (point.x < hit.bounds.minX + 100 || point.x >= hit.bounds.maxX - 64) { return (nil, nil) }
     let found = cache.entry(for: hit, force: forceClients)
     // peers are the owner's other visible windows: with `sessions`, the core
     // refuses an app that runs more sessions than it shows (tabs, splits,
     // background native tabs, windows minimised or on another Space).
-    let peers = windows.filter { $0.pid == hit.pid && $0.id != hit.id }.map { rect($0.bounds) }
+    let peers = windows.filter { candidate in
+        candidate.pid == hit.pid && candidate.id != hit.id
+        && ghosttyFullscreenParent(candidate, windows: windows, displays: displays, isGhostty: isGhostty)?.id != hit.id
+    }.map { rect($0.bounds) }
     let description: [String: Any] = [
         "id": String(hit.id), "pid": Int(hit.pid), "app": appName(hit.pid), "bounds": rect(hit.bounds),
+        "tab_only": tabOnly,
         "scale": scale(at: CGPoint(x: hit.bounds.midX, y: hit.bounds.midY)).map { $0 as Any } ?? NSNull(),
         "peers": peers,
         "sessions": found.sessions.map { $0 as Any } ?? NSNull(),

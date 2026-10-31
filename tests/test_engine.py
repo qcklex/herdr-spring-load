@@ -272,6 +272,21 @@ class EngineTest(unittest.TestCase):
         self.run_engine(self.drag(0.5, [(self.pane_point(self.other_pane()), 0.8)], window=window))
         self.assertEqual(self.server.focus_calls(), [])
 
+    def test_fullscreen_toolbar_region_can_focus_tabs_but_never_panes(self):
+        # The sensor maps Ghostty's transparent fullscreen toolbar to the real
+        # terminal; its restricted region must not focus content behind it.
+        window = dict(self.window(), tab_only=True)
+        self.run_engine(self.drag(0.5, [(self.pane_point(self.other_pane()), 0.8)], window=window))
+        self.assertEqual(self.server.focus_calls(), [])
+        files, first, tab_point, click_point = self.tab_setup()
+        steps = [(0.15, lambda: self.server.user_focus('tab.focus', tab_id=first.id)),
+                 (0.2, {'type':'click','x':click_point[0],'y':click_point[1],'window':self.window()})]
+        self.server.calls.clear()
+        self.run_engine(steps + self.drag(1.5, [(tab_point,1.0)], window=window))
+        self.assertEqual(self.server.focus_calls(), [('tab.focus',{'tab_id':files.id})])
+        with self.assertRaises(contract.ContractError):
+            contract.validate_window(dict(window,tab_only='yes'))
+
     def test_tabs_need_calibration_then_spring_load(self):
         files = next(t for t in self.server.snapshot['tabs'] if t['label'] == 'a much longer tab name')
         model = render.build_model(120, 40, self.server.snapshot, render.ui_from_config({'ui': {}}), render.Preferences())

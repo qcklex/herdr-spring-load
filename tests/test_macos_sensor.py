@@ -79,6 +79,33 @@ print(String(data: try! JSONSerialization.data(withJSONObject: results), encodin
         result = subprocess.run([str(binary)], check=True, capture_output=True, text=True, timeout=10)
         self.assertEqual(json.loads(result.stdout), [1, 2, 3, 2, 2])
 
+    def test_fullscreen_toolbar_maps_only_to_one_same_owner_display_window(self):
+        harness = self.tmp/'fullscreen.swift'
+        binary = self.tmp/'fullscreen'
+        harness.write_text(SOURCE.read_text().split('// MARK: main')[0] + r'''
+let screen = CGRect(x: 0, y: 0, width: 1920, height: 1200)
+let body = WindowInfo(id: 2, pid: 10, bounds: screen)
+let strip = WindowInfo(id: 1, pid: 10, bounds: CGRect(x: 0, y: 0, width: 1920, height: 32))
+func parent(_ strip: WindowInfo, _ windows: [WindowInfo], _ ghostty: Bool = true) -> UInt32? {
+    ghosttyFullscreenParent(strip, windows: windows, displays: [screen], isGhostty: { _ in ghostty })?.id
+}
+let results = [
+    parent(strip, [strip,body]) == 2,
+    parent(strip, [strip,body], false) == nil,
+    parent(strip, [strip,WindowInfo(id: 2,pid: 11,bounds: screen)]) == nil,
+    parent(strip, [strip,body,WindowInfo(id: 3,pid: 10,bounds: screen)]) == nil,
+    parent(WindowInfo(id: 1,pid: 10,bounds: CGRect(x: 0,y: 100,width: 1920,height: 32)), [body]) == nil,
+    parent(strip, [strip,WindowInfo(id: 2,pid: 10,bounds: CGRect(x: 0,y: 0,width: 1920,height: 1100))]) == nil,
+    parent(WindowInfo(id: 1,pid: 10,bounds: CGRect(x: 0,y: 0,width: 1920,height: 100)), [body]) == nil
+]
+print(String(data: try! JSONSerialization.data(withJSONObject: results), encoding: .utf8)!)
+''')
+        result = subprocess.run([*load_build().find_swiftc(), '-o', str(binary), str(harness)],
+                                capture_output=True, text=True, timeout=120)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        output = subprocess.run([str(binary)], check=True, capture_output=True, text=True, timeout=10)
+        self.assertEqual(json.loads(output.stdout), [True]*7)
+
     def test_check_prints_a_valid_hello(self):
         result = self.run_sensor('--check')
         self.assertEqual(result.returncode, 0, result.stderr)

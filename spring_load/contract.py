@@ -99,12 +99,18 @@ def validate_window(value):
     sessions = value.get('sessions')
     if sessions is not None and (_int(sessions, 'window.sessions') < 0):
         raise ContractError('window.sessions must not be negative')
-    return {'sessions': sessions,
+    tab_only = value.get('tab_only', False)
+    if not isinstance(tab_only, bool):
+        raise ContractError('window.tab_only must be a boolean')
+    parsed = {'sessions': sessions,
             'id': _string(value.get('id'), 'window.id'), 'pid': _int(value.get('pid'), 'window.pid'),
             'app': _string(value.get('app'), 'window.app', nullable=True),
             'bounds': validate_rect(value.get('bounds')), 'scale': None if scale is None else float(scale),
             'peers': [validate_rect(p, 'window.peers[]') for p in peers],
             'clients': None if clients is None else [validate_client(c) for c in clients]}
+    if tab_only:
+        parsed['tab_only'] = True
+    return parsed
 
 def validate_hello(event):
     if event.get('type') != 'hello':
