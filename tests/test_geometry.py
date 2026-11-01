@@ -112,5 +112,53 @@ class GeometryTest(unittest.TestCase):
         calibrated = grid.narrowed(geometry.Interval(0, 0), geometry.Interval(2, 3))
         self.assertEqual(geometry.resolve(model, calibrated, 25, 9).id, 't')
 
+# Window shapes recorded from Ghostty 1.4 at one font size: (width, height, cols, rows, xpixel, ypixel).
+GHOSTTY_SHAPES = [(1017, 964, 126, 54, 1013, 928), (1920, 1200, 239, 70, 1916, 1196), (2560, 1440, 319, 84, 2556, 1436),
+                  (2183, 1177, 272, 67, 2179, 1141), (1920, 1170, 239, 66, 1916, 1134)]
+
+class GhosttyCellSizeTest(unittest.TestCase):
+    def client(self, shape):
+        _, _, cols, rows, xpixel, ypixel = shape
+        return {'cols': cols, 'rows': rows, 'xpixel': xpixel, 'ypixel': ypixel}
+
+    def test_every_window_gets_the_one_cell_the_font_has(self):
+        for shape in GHOSTTY_SHAPES:
+            grid = geometry.fit(shape[:2], self.client(shape), 2.0, whole_cells=True)
+            self.assertEqual((grid.cell_width, grid.cell_height), (8, 17), shape)
+
+    def test_dividing_the_surface_is_a_row_off_low_in_the_window(self):
+        # The window is 239x66 with 34 points above row 0. The centre of row 60.
+        shape = GHOSTTY_SHAPES[4]
+        dy = 34 + 60.5 * 17
+        whole = geometry.fit(shape[:2], self.client(shape), 2.0, whole_cells=True)
+        ratio = geometry.fit(shape[:2], self.client(shape), 2.0)
+        row = lambda grid: int((dy - 34) // grid.cell_height)
+        self.assertEqual((row(whole), row(ratio)), (60, 59))
+
+    def test_half_point_cells_on_a_retina_display(self):
+        client = {'cols': 100, 'rows': 40, 'xpixel': 853, 'ypixel': 703}   # 8.5 x 17.5 points, surface left over
+        grid = geometry.fit((857, 739), client, 2.0, whole_cells=True)
+        self.assertEqual((grid.cell_width, grid.cell_height), (8.5, 17.5))
+
+    def test_other_terminals_keep_the_exact_ratio(self):
+        client = {'cols': 100, 'rows': 40, 'xpixel': 853, 'ypixel': 703}
+        grid = geometry.fit((857, 739), client, 2.0)
+        self.assertEqual((grid.cell_width, grid.cell_height), (8.53, 17.575))
+
+    def test_a_resized_window_needs_no_click(self):
+        # One calibrated window of each kind, then windows of sizes never seen.
+        with tempfile.TemporaryDirectory() as temp:
+            calibration = geometry.Calibration(Path(temp)/'calibration.json')
+            seen = (1017, 964, 126, 54, 1013, 928)
+            calibration.data[geometry.calibration_key(geometry.GHOSTTY, seen[:2], self.client(seen))] = \
+                {'origin': [1.5, 2.5, 32, 36], 'candidate': None}
+            for width, height in ((800, 600), (1300, 900), (1920, 1170), (2183, 1177), (640, 480)):
+                xpixel, ypixel = width - 4, height - 36
+                shape = (width, height, xpixel // 8, ypixel // 17, xpixel, ypixel)
+                grid = geometry.fit(shape[:2], self.client(shape), 2.0, whole_cells=True)
+                key = geometry.calibration_key(geometry.GHOSTTY, shape[:2], self.client(shape))
+                applied = calibration.apply(key, grid)
+                self.assertLessEqual(applied.origin_y.width, grid.cell_height / 2, shape)
+
 if __name__ == '__main__':
     unittest.main()

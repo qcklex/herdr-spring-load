@@ -5,7 +5,19 @@
 Spring-loading with no OS permission, in any terminal. The helper now only
 observes, and selects through herdr's own API.
 
+### Fixed
+- Ghostty reports its surface size, not the text grid, so dividing it by the
+  rows and columns gave a cell too large, by up to 12 points of drift at the
+  bottom of a window and 10 at the right. Cells are now whole backing pixels.
+  Calibration starts again once, because the old origins were learned with
+  the wrong cell size.
+- One mismatched pane click no longer keeps a window off until the next tab
+  or Space click: the next pane click that agrees clears it.
+
 ### Added
+- One log line per drag over herdr: what it hovered, what it focused, and why
+  anything was off. A refused drag used to leave no trace after the first.
+
 - A sensor per OS that observes the drag, the pointer, the window under it
   and that window's herdr clients, and prints NDJSON (docs/SENSOR.md).
 - macOS sensor, with no permission. It reads the pointer and mouse buttons,

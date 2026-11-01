@@ -98,7 +98,8 @@ class Engine:
         self.list_processes = list_processes
         self.uninstall = uninstall
         self.platform = platform or sys.platform
-        self.calibration = geometry.Calibration(self.support/'calibration.json')
+        # calibration.json was learned with Ghostty's cell size wrong: do not read it.
+        self.calibration = geometry.Calibration(self.support/'calibration-2.json')
         self.dwell = Dwell(self.settings)
         self.events = queue.Queue()
         self.subscriptions = {}
@@ -115,7 +116,8 @@ class Engine:
         self.last_drag_end = -1e9
         self.next_discover = -1e9
         self.verified = {}         # (client pid, config path) -> (config stamp, kinds clicks confirmed)
-        self.stale = {}            # calibration key -> why the replica disagreed with herdr
+        self.stale = {}            # calibration key -> (why the replica disagreed with herdr, target kind)
+        self.trail = None          # what the current drag met, for its line in the log
         self.identities = {}       # (api socket, workspace id) -> (identity cwd, when it changed)
         self.starts = {}           # client pid -> process start (epoch seconds) or None
         self.missing_since = None
@@ -199,12 +201,31 @@ class Engine:
         self.everyone = event.get('all_clients')
         if self.everyone is None:
             self.everyone = self.list_processes()
+        self.trail = {'moves': 0, 'shape': None, 'point': None, 'refused': {}, 'reasons': [], 'hovered': [], 'focused': 0}
         self.report('dragging', None)
         self.move(event)
+
+    def log_trail(self):
+        """One line per drag over herdr, so a drag that did nothing leaves a
+        reason: report() logs a reason only when it changes."""
+        trail, self.trail = self.trail, None
+        if not trail or (trail['shape'] is None and not trail['reasons']):
+            return
+        parts = [f'drag over {trail["shape"]}: {trail["moves"]} moves, focused {trail["focused"]}']
+        if trail['point']:
+            parts.append(f'last point {trail["point"][0]:.0f},{trail["point"][1]:.0f}')
+        if trail['hovered']:
+            parts.append('hovered ' + ', '.join(trail['hovered']))
+        if trail['refused']:
+            parts.append('off: ' + '; '.join(f'{k}: {v}' for k, v in sorted(trail['refused'].items())))
+        if trail['reasons']:
+            parts.append('refused: ' + '; '.join(trail['reasons']))
+        self.log(', '.join(parts))
 
     def end_drag(self):
         if self.dragging:
             self.last_drag_end = self.clock()
+        self.log_trail()
         self.dragging = False
         self.everyone = None
         self.context = None
@@ -219,7 +240,15 @@ class Engine:
             if window is None:
                 raise Unavailable(None)
             context = self.context_for(window, event['x'], event['y'])
-            target = geometry.resolve(context.model, context.grid, event['x'] - window['bounds']['x'], event['y'] - window['bounds']['y'])
+            dx, dy = event['x'] - window['bounds']['x'], event['y'] - window['bounds']['y']
+            target = geometry.resolve(context.model, context.grid, dx, dy)
+            if self.trail is not None:
+                self.trail['moves'] += 1
+                self.trail['point'] = (dx, dy)
+                self.trail['shape'] = f'{window.get("app")} {context.key.split("|", 1)[-1]}'
+                self.trail['refused'].update(context.model.refused)
+                if target is not None and f'{target.kind} {target.id}' not in self.trail['hovered']:
+                    self.trail['hovered'].append(f'{target.kind} {target.id}')
             if target is not None and window.get('tab_only') and target.kind != 'tab':
                 target = None
             if target is not None and self.is_focused(context.snapshot, target):
@@ -230,6 +259,8 @@ class Engine:
             self.hover = None
             if why.args[0]:
                 self.report(reason=str(why))
+                if self.trail is not None and str(why) not in self.trail['reasons']:
+                    self.trail['reasons'].append(str(why))
         self.tick()
 
     def tick(self):
@@ -245,6 +276,8 @@ class Engine:
             self.report(reason=f'herdr refused {fire.kind} focus: {error}')
             return
         self.log(f'focused {fire.kind} {fire.id}')
+        if self.trail is not None:
+            self.trail['focused'] += 1
         self.report(last_action={'kind': fire.kind, 'id': fire.id, 'time': time.time()})
         context.read_at = -1e9   # the layout changed: re-read before the next target
         self.hover = None
@@ -285,7 +318,8 @@ class Engine:
         if isinstance(sessions, int) and sessions > windows:
             raise Unavailable(f'this terminal runs {sessions} sessions in {windows} window(s), so it has tabs or splits '
                               'and herdr may be in a hidden one; run herdr alone in its window (no tabs, no splits)')
-        fitting = [(c, g) for c in locals_ for g in [geometry.fit(bounds, c, window.get('scale'))] if g]
+        whole_cells = window.get('app') == geometry.GHOSTTY
+        fitting = [(c, g) for c in locals_ for g in [geometry.fit(bounds, c, window.get('scale'), whole_cells)] if g]
         if len(fitting) != 1:
             raise Unavailable('cannot tell which herdr client this window shows' if fitting else
                               'no herdr client in this window matches its size (or the terminal reports no pixel size)')
@@ -317,7 +351,7 @@ class Engine:
                               'so spring-loading only works with exactly one')
         key = geometry.calibration_key(window.get('app'), bounds, client)
         if key in self.stale:
-            raise Unavailable(self.stale[key])
+            raise Unavailable(self.stale[key][0])
         allowed = self.check_config(binding, client)
         model, snapshot = self.read_model(binding, client)
         if allowed != ALL_KINDS:
@@ -589,12 +623,19 @@ class Engine:
         self.log(f'click on {target.kind} {target.id}: calibration {outcome}')
         if outcome in ('impossible', 'disagrees'):
             # herdr focused this target, but not where the replica draws it.
-            self.stale[click['key']] = ('herdr focused a tab or Space where this replica does not draw it; '
-                                        'spring-loading is off for this window until a click agrees again')
+            what = 'a pane' if target.kind == 'pane' else 'a tab or Space'
+            self.stale[click['key']] = (f'herdr focused {what} where this replica does not draw it; '
+                                        'spring-loading is off for this window until a click agrees again', target.kind)
         elif outcome == 'relearned':
             # The geometry changed under earlier confirmations: they are void.
             self.verified.pop((click['client']['pid'], str(click['binding'].config_path)), None)
             self.stale.pop(click['key'], None)
+        elif target.kind == 'pane':
+            # One misattributed pane click must not keep the window off: rapid
+            # clicks can pair a click with its neighbour's focus event. An
+            # agreeing pane click clears only what a pane click set.
+            if self.stale.get(click['key'], (None, None))[1] == 'pane':
+                self.stale.pop(click['key'], None)
         elif target.kind in ('space', 'tab'):
             self.stale.pop(click['key'], None)
             # A first calibration fits almost any config (review H3), and a click

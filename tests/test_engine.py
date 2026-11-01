@@ -307,7 +307,7 @@ class EngineTest(unittest.TestCase):
         engine = self.run_engine(steps + self.drag(1.5, [(tab_point, 1.0)]))
         self.assertEqual(engine.status['calibrated'], 1)
         self.assertEqual(self.server.focus_calls(), [('tab.focus', {'tab_id': files['tab_id']})])
-        stored = json.loads((self.temp/'support/calibration.json').read_text())
+        stored = json.loads((self.temp/'support/calibration-2.json').read_text())
         low, high = list(stored.values())[0]['origin'][2:]
         self.assertLessEqual(low, TITLEBAR)
         self.assertGreaterEqual(high, TITLEBAR)
@@ -344,7 +344,7 @@ class EngineTest(unittest.TestCase):
         # last row, so no other Space lies in the first click's uncertainty: it counts at once.
         self.assertEqual(outcomes, ['learned', 'agrees'])
         self.assertTrue(all(f"space {assets['workspace_id']}" in l for l in lines if 'calibration ' in l))
-        low, high = list(json.loads((self.temp/'support/calibration.json').read_text()).values())[0]['origin'][2:]
+        low, high = list(json.loads((self.temp/'support/calibration-2.json').read_text()).values())[0]['origin'][2:]
         self.assertLessEqual(high - low, 3)
         # Pointer path: the "project" row, then the "files" tab, then the pane that is not focused there.
         def centre(rect):
@@ -603,6 +603,67 @@ class EngineTest(unittest.TestCase):
         self.assertTrue(all('space' not in kinds for _, kinds in engine.verified.values()), engine.verified)
         self.assertEqual(self.server.focus_calls(), [])
         self.assertIn('config changed after this herdr client started', engine.status['reason'])
+
+    def stale_setup(self):
+        engine = core.Engine(ScriptedSensor([]), self.temp/'support', env=self.env)
+        model = render.build_model(120, 40, self.server.snapshot, render.ui_from_config({'ui': {}}), render.Preferences())
+        engine.read_model = lambda binding, client: (model, None)
+        grid = geometry.Grid(120, 40, CELL_W, CELL_H, geometry.Interval(0, 2), geometry.Interval(0, 28))
+        click = {'binding': core.clients.bind(self.client(), {}), 'client': self.client(), 'key': 'k', 'grid': grid, 'dx': 10, 'dy': 30}
+        target = lambda kind: next(t for t in model.targets if t.kind == kind)
+        return engine, click, target
+
+    def test_one_bad_pane_click_does_not_keep_the_window_off(self):
+        # Seen with real clicks: a pane click came back impossible, four drags were
+        # refused, and the pane clicks that agreed after it changed nothing.
+        engine, click, target = self.stale_setup()
+        pane = target('pane')
+        engine.calibration.learn = lambda *args, **kwargs: 'impossible'
+        engine.learn(click, (pane.kind, pane.id))
+        self.assertIn('herdr focused a pane where', engine.stale['k'][0])
+        engine.calibration.learn = lambda *args, **kwargs: 'agrees'
+        engine.learn(click, (pane.kind, pane.id))
+        self.assertNotIn('k', engine.stale)
+
+    def test_an_agreeing_pane_click_does_not_clear_what_a_tab_click_proved(self):
+        # Review H3: a tab that herdr focused elsewhere is a real disagreement, and
+        # pane rects are too large to contradict it.
+        engine, click, target = self.stale_setup()
+        tab, pane = target('tab'), target('pane')
+        engine.calibration.learn = lambda *args, **kwargs: 'impossible'
+        engine.learn(click, (tab.kind, tab.id))
+        engine.calibration.learn = lambda *args, **kwargs: 'agrees'
+        engine.learn(click, (pane.kind, pane.id))
+        self.assertIn('k', engine.stale)
+        engine.learn(click, (tab.kind, tab.id))
+        self.assertNotIn('k', engine.stale)
+
+    def test_each_drag_over_herdr_leaves_a_line_in_the_log(self):
+        target = self.other_pane()
+        lines = []
+        self.run_engine(self.drag(0.5, [(self.pane_point(target), 0.5)]), log=lines.append)
+        trail = [l for l in lines if l.startswith('drag over ')]
+        self.assertEqual(len(trail), 1, lines)
+        self.assertIn('test.terminal', trail[0])
+        self.assertIn('focused 1', trail[0])
+        self.assertIn(f'hovered pane {target}', trail[0])
+
+    def test_a_refused_drag_says_why_every_time(self):
+        # report() logs a reason only when it changes, so the second refused drag
+        # used to leave nothing at all.
+        everyone = [self.client(), self.client(pid=5151)]
+        drag = lambda at: self.drag(at, [(self.pane_point(self.other_pane()), 0.4)], everyone=everyone)
+        lines = []
+        self.run_engine(drag(0.5) + drag(1.5), log=lines.append)
+        self.assertEqual(len([l for l in lines if l.startswith('drag over ') and '2 herdr clients' in l]), 2, lines)
+
+    def test_a_drag_elsewhere_logs_nothing(self):
+        lines = []
+        steps = [(0.5, {'type': 'drag_start', 'x': 0, 'y': 0, 'kind': 'files', 'window': None, 'all_clients': []}),
+                 (0.6, {'type': 'drag_move', 'x': 5, 'y': 5, 'window': None}),
+                 (0.7, {'type': 'drag_end', 'x': 5, 'y': 5, 'reason': 'released'})]
+        self.run_engine(steps, log=lines.append)
+        self.assertEqual([l for l in lines if l.startswith('drag over ')], [])
 
     def test_relearned_geometry_voids_config_confirmations(self):
         # Review N9: 'relearned' adopts a new origin; it never confirms, and it voids

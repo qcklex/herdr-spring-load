@@ -15,6 +15,7 @@ import tempfile
 MAX_SIDE_LEFTOVER_CELLS = 1.5
 MAX_TOP_LEFTOVER_ROWS = 6     # titlebar plus a native tab bar, plus padding
 SCALES = (1.0, 2.0, 3.0)
+GHOSTTY = 'com.mitchellh.ghostty'
 
 @dataclass(frozen=True)
 class Interval:
@@ -56,10 +57,14 @@ class Grid:
     def narrowed(self, origin_x, origin_y):
         return Grid(self.cols, self.rows, self.cell_width, self.cell_height, origin_x, origin_y)
 
-def fit(bounds, client, scale_hint=None):
+def fit(bounds, client, scale_hint=None, whole_cells=False):
     """The client's grid in a window of `bounds` (width, height), or None when it
     cannot be this window's grid. Pixel sizes may be in coordinate units or in
-    backing pixels; the scale that fits is used."""
+    backing pixels; the scale that fits is used. With `whole_cells` the pixel
+    size is the surface, not the grid: Ghostty reports its size minus padding,
+    so the rows and columns leave up to a cell over, and dividing it by them
+    gives a cell too large by an error that grows with the row. Its cells are a
+    whole number of backing pixels, which rounding down recovers."""
     width, height = bounds
     cols, rows = client.get('cols'), client.get('rows')
     xpixel, ypixel = client.get('xpixel') or 0, client.get('ypixel') or 0
@@ -86,6 +91,10 @@ def fit(bounds, client, scale_hint=None):
     for scale in scales:
         grid_w, grid_h = xpixel / scale, ypixel / scale
         cell_w, cell_h = grid_w / cols, grid_h / rows
+        if whole_cells:
+            backing = scale_hint or 1.0
+            cell_w = math.floor(grid_w * backing / cols) / backing or cell_w
+            cell_h = math.floor(grid_h * backing / rows) / backing or cell_h
         left_w, left_h = width - grid_w, height - grid_h
         if -0.5 <= left_w <= MAX_SIDE_LEFTOVER_CELLS * cell_w and -0.5 <= left_h <= MAX_TOP_LEFTOVER_ROWS * cell_h:
             fits.append(Grid(cols, rows, cell_w, cell_h, Interval(0, max(0, left_w)), Interval(0, max(0, left_h))))
@@ -137,7 +146,7 @@ class Calibration:
         contradictory observations require their own calibration.
         """
         parts = key.split('|')
-        if len(parts) != 7 or parts[0] != 'com.mitchellh.ghostty':
+        if len(parts) != 7 or parts[0] != GHOSTTY:
             return None
         current, candidate = self.entry(key)
         if candidate is not None or (current is not None and current[1].width <= grid.cell_height / 2):
@@ -154,7 +163,7 @@ class Calibration:
                 continue
             try:
                 width,height,cols,rows,xpixel,ypixel = map(float,fields[1:])
-                old = fit((width,height),{'cols':cols,'rows':rows,'xpixel':xpixel,'ypixel':ypixel})
+                old = fit((width,height),{'cols':cols,'rows':rows,'xpixel':xpixel,'ypixel':ypixel},whole_cells=True)
             except (ValueError,TypeError,OverflowError):
                 continue
             if old is None or stored[1].width > old.cell_height / 2:
