@@ -359,7 +359,17 @@ class Engine:
             for kind in ALL_KINDS - allowed:
                 model.refused.setdefault(kind, UNCONFIRMED[kind])
             self.report(refused=dict(model.refused))
-        self.context = Context(window['id'], client['pid'], binding, self.calibration.apply(key, grid), key, model, snapshot, now, bounds)
+        grid = self.calibration.apply(key, grid)
+        if grid.origin_y.width > 0.5 * grid.cell_height:
+            # resolve() leaves tabs and Spaces out until the row is known to half
+            # a row. A window's titlebar leaves more vertical slack than one click
+            # usually narrows (fullscreen leaves almost none), so say so.
+            coarse = (f'rows here are uncertain by {grid.origin_y.width:.0f} of {grid.cell_height:g} points; '
+                      'click a different tab or Space once or twice more, without dragging anything')
+            for kind in ('tab', 'space'):
+                model.refused.setdefault(kind, coarse)
+            self.report(refused=dict(model.refused))
+        self.context = Context(window['id'], client['pid'], binding, grid, key, model, snapshot, now, bounds)
         self.ensure_subscription(binding.api_socket)
         return self.context
 

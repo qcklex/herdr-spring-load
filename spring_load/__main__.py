@@ -92,7 +92,7 @@ def status(args):
     for kind, why in (data.get('refused') or {}).items():
         print(f'  {kind} targets off: {why}')
     print(f'  calibrated window shapes: {data.get("calibrated", 0)}'
-          + ('' if data.get('calibrated') else ' (to turn on tabs and Spaces, click a different herdr tab once, or a different Space twice,'
+          + ('' if data.get('calibrated') else ' (to turn on tabs and Spaces, click a different herdr tab or Space, twice in a window,'
              ' without dragging anything)'))
     action = data.get('last_action')
     if action:

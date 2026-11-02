@@ -72,7 +72,9 @@ observes, and selects through herdr's own API.
 - Navigation acts only when exactly one local client is attached to the
   session; otherwise nothing happens and the status action says why.
 - Tabs and Spaces need an ordinary click per window size first: a different
-  tab once, or a different Space twice. Panes work right away.
+  tab or Space; in a window usually twice, because the titlebar leaves more
+  slack than one click narrows. Panes work right away. The status and the
+  drag's log line say when another click is needed.
 - After a herdr config change, clicks confirm which config a running client
   shows: a click confirms only when it lands where the stored calibration
   agrees, and it never moves that calibration. Clicks confirm tabs and

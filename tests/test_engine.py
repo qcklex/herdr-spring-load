@@ -293,9 +293,13 @@ class EngineTest(unittest.TestCase):
         rect = model.find('tab', files['tab_id']).rect
         # Upper part of the tab row: one calibrating click leaves under half a row of doubt.
         tab_point = (self.point(rect.x + rect.width // 2, 0)[0], self.window_xy[1] + TITLEBAR + 3)
-        # Uncalibrated: the titlebar makes row 0 uncertain, so the tab never fires.
-        self.run_engine(self.drag(0.5, [(tab_point, 1.0)]))
+        # Uncalibrated: the titlebar makes row 0 uncertain, so the tab never fires,
+        # and the status and the drag's log line say what to do.
+        lines = []
+        engine = self.run_engine(self.drag(0.5, [(tab_point, 1.0)]), log=lines.append)
         self.assertEqual(self.server.focus_calls(), [])
+        self.assertIn('rows here are uncertain by', engine.status['refused']['tab'])
+        self.assertIn('click a different tab or Space', next(l for l in lines if l.startswith('drag over ')))
         # The user clicks the first tab normally; herdr reports the focus; the core learns.
         first = model.find('tab', next(t['tab_id'] for t in self.server.snapshot['tabs'] if t['label'] == '1'))
         cx, cy = self.point(first.rect.x + 2, 0)
