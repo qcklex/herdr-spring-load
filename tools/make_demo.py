@@ -65,10 +65,6 @@ def render(t):
         d.polygon([(x,y),(x,y+23),(x+6,y+17),(x+12,y+28),(x+17,y+25),(x+11,y+14),(x+20,y+14)],fill=INK,outline=BG)
         d.rounded_rectangle((x+22,y+18,x+131,y+48),radius=5,fill='#344b50',outline=ACCENT)
         d.text((x+30,y+23),'photo.png',font=SMALL,fill=INK)
-        # Dwell progress rings mark the target before it opens.
-        if .9<=t<2.2 or 3.5<=t<4.6 or 5.8<=t<6.4:
-            start,end=(.9,2.2) if t<2.2 else ((3.5,4.6) if t<4.6 else (5.8,6.4))
-            d.arc((x-13,y-13,x+17,y+17),-90,-90+360*(t-start)/(end-start),fill=ACCENT,width=3)
     caption=('Keep holding the file while you drag' if t<.9 else
              'Hover over a tab to switch to it' if t<2.6 else
              'Hover over a space to open that workspace' if t<5 else

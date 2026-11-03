@@ -1,11 +1,12 @@
 # herdr-spring-load for Ghostty
 
-Spring-loaded tab and pane switching for herdr in **Ghostty on macOS**.
-Hold a file over a herdr tab or pane to switch focus before dropping it.
+Spring-loaded Space, tab and pane switching for herdr in **Ghostty on macOS**.
+Hold a file over a Space in the sidebar, a herdr tab or a pane to switch to it
+before dropping the file.
 
-**Work in progress:** Space switching in the sidebar is currently broken,
-including in Ghostty. Terminal.app, Warp and other terminals are not supported
-at this time. Broader terminal and operating-system support is in development.
+**Work in progress:** in Terminal.app only pane focus works so far. Warp and
+other terminals are not supported at this time. Broader terminal and
+operating-system support is in development.
 
 ## Current status
 
@@ -13,8 +14,8 @@ at this time. Broader terminal and operating-system support is in development.
 |---|---|
 | Tab switching in Ghostty on macOS | Working in user testing, including native fullscreen; calibration required |
 | Pane focus in Ghostty on macOS | Working in user testing |
-| Space switching in the sidebar | Broken; work in progress |
-| macOS Terminal.app | Its window chrome is now recognised (it was rejected before); not yet confirmed with a real drag |
+| Space switching in Ghostty on macOS | Working in user testing; calibration required, and every Space must fit in the sidebar without scrolling |
+| macOS Terminal.app | Pane focus working in user testing; tab and Space switching not working yet |
 | Warp and other macOS terminals | Work in progress; not supported |
 | Linux and Windows | Experimental implementation and automated tests exist; not supported for everyday use |
 
@@ -48,9 +49,10 @@ includes Ghostty to make the current compatibility clear.
    pane for about 0.25 seconds to focus it.
 5. Release to let Ghostty deliver the file to the focused pane as usual.
 
-Hovering the sidebar's Space entries currently does **not** reliably switch
-Spaces. Select the Space normally before starting your drag. Space switching
-is being investigated and is not advertised as a working feature.
+Pause over a Space in the sidebar for about 0.6 seconds to open it. This
+needs the whole Space list to fit in the window: when the sidebar scrolls,
+the helper cannot tell which Space is under the pointer and leaves Spaces off.
+Make the window taller, or select the Space normally before dragging.
 
 The plugin changes focus; the terminal handles the drop. It does not open
 files or preview images itself.
@@ -60,8 +62,7 @@ files or preview images itself.
 ![Illustration of the intended spring-loaded drag workflow](docs/spring-load-demo.gif)
 
 This GIF is an illustration of the intended workflow, not a recording or proof
-of the current implementation. Its Space-switching sequence shows a feature
-that is currently broken. Regenerate it with `python3 tools/make_demo.py`
+of the current implementation. Regenerate it with `python3 tools/make_demo.py`
 (requires Pillow).
 
 ## Limits and troubleshooting
@@ -79,7 +80,7 @@ that is currently broken. Regenerate it with `python3 tools/make_demo.py`
   are ignored.
 - **Layout uncertainty.** Overflowing tab rows, unknown geometry or config
   changes can disable targets. Sidebar git-state and layout checks can disable
-  Space targets; resolving the Space failure remains work in progress.
+  Space targets, and a Space list that scrolls turns Spaces off.
 - **Remote sessions.** `herdr --remote` windows are not supported. Do not attach
   remote or otherwise undetectable clients to a session while dragging.
 - **Other drag helpers.** Avoid running another helper that changes focus during
@@ -110,8 +111,8 @@ sh scripts/build.sh --tab-dwell-ms 800 --pane-dwell-ms 300
 
 ## Development and compatibility work
 
-The immediate priorities are reliable Space switching in Ghostty, then
-Terminal.app, Warp and other terminals. Linux and Windows support also remains
+The immediate priorities are tab and Space switching in Terminal.app, then
+Warp and other terminals. Linux and Windows support also remains
 in development. There is no claim of universal terminal or OS compatibility.
 
 The code contains macOS, Linux and Windows sensors and a shared Python core.
@@ -148,8 +149,7 @@ To run the isolated Herdr integration check on macOS:
 HERDR_TEST_ISOLATED=1 python3 -m unittest discover -s tests -p test_isolated_herdr.py -v
 ```
 
-This uses a throwaway session and scripted drag events. Its Space-selection
-check can pass while real sidebar hovering still fails. The latest local check
+This uses a throwaway session and scripted drag events. The latest local check
 also had an intermittent final paste-delivery failure before passing on rerun;
 manual end-to-end verification remains necessary.
 

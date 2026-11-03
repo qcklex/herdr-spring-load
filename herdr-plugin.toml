@@ -1,8 +1,8 @@
 id = "herdr-spring-load"
-name = "herdr-spring-load for Ghostty (macOS, tabs and panes)"
+name = "herdr-spring-load for Ghostty (macOS)"
 version = "0.3.0"
 min_herdr_version = "0.9.3"
-description = "Ghostty on macOS only: hover over herdr tabs or panes while dragging a file to switch before dropping. Space switching is broken; Terminal.app, Warp and broader compatibility are work in progress."
+description = "Ghostty on macOS: hover over herdr Spaces, tabs or panes while dragging a file to switch before dropping. Terminal.app focuses panes only so far; Warp and broader compatibility are work in progress."
 platforms = ["macos", "linux", "windows"]
 
 # Builds and checks this OS's sensor, installs the core and starts the login
