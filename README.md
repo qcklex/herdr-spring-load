@@ -12,9 +12,9 @@ operating-system support is in development.
 
 | Feature or environment | Status |
 |---|---|
-| Tab switching in Ghostty on macOS | Working in user testing, including native fullscreen; calibration required |
+| Tab switching in Ghostty on macOS | Working in user testing |
 | Pane focus in Ghostty on macOS | Working in user testing |
-| Space switching in Ghostty on macOS | Working in user testing; calibration required, and every Space must fit in the sidebar without scrolling |
+| Space switching in Ghostty on macOS | Working in user testing |
 | macOS Terminal.app | Pane focus working in user testing; tab and Space switching not working yet |
 | Warp and other macOS terminals | Work in progress; not supported |
 | Linux and Windows | Experimental implementation and automated tests exist; not supported for everyday use |
