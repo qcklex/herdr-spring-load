@@ -83,6 +83,16 @@ class GeometryTest(unittest.TestCase):
         retina = geometry.fit((960, 600), {'cols': 100, 'rows': 30, 'xpixel': 1904, 'ypixel': 1080}, 2.0)
         self.assertAlmostEqual(retina.cell_width, 9.52)
 
+    def test_terminal_app_inset_and_scrollbar_gutter(self):
+        # Measured on macOS Terminal.app: a 120x30 window reports 840x450 pixels
+        # in a 877x499 frame, 37 points (over five columns) of side chrome.
+        client = {'cols': 120, 'rows': 30, 'xpixel': 840, 'ypixel': 450}
+        grid = geometry.fit((877, 499), client, 2.0)
+        self.assertIsNotNone(grid)
+        self.assertEqual((grid.cell_width, grid.cell_height), (7, 15))
+        self.assertEqual((grid.origin_x, grid.origin_y), (geometry.Interval(0, 37), geometry.Interval(0, 49)))
+        self.assertIsNone(geometry.fit((889, 499), client, 2.0), 'beyond 48 points and 1.5 cells')
+
     def test_real_windows_console_frame_and_scrollbar(self):
         # Real CI run 40906804772: its 19 px frame/scrollbar remainder was
         # rejected despite a valid 120x30, 8x16 console grid.
@@ -92,8 +102,11 @@ class GeometryTest(unittest.TestCase):
         self.assertIsNotNone(grid)
         self.assertEqual((grid.cell_width, grid.cell_height), (8, 16))
         self.assertEqual(grid.cells(1 + 119.5*8, 31 + 29.5*16), ((119,119), (29,29)))
-        # Only the measured grid gets this treatment; generic matching stays strict.
-        self.assertIsNone(geometry.fit((979,512), {k:v for k,v in client.items() if k!='grid_origin'},1.0))
+        # Only the measured grid is placed exactly; generic matching leaves the
+        # whole remainder uncertain, and refuses one beyond the side allowance.
+        generic = geometry.fit((979,512), {k:v for k,v in client.items() if k!='grid_origin'},1.0)
+        self.assertEqual((generic.origin_x, generic.origin_y), (geometry.Interval(0,19), geometry.Interval(0,32)))
+        self.assertIsNone(geometry.fit((1009,512), {k:v for k,v in client.items() if k!='grid_origin'},1.0))
         for origin in ({'x':-1,'y':31}, {'x':20,'y':31}, {'x':1,'y':33},
                        {'x':float('nan'),'y':31}, {'x':True,'y':31}):
             self.assertIsNone(geometry.fit((979,512), {**client,'grid_origin':origin},1.0))

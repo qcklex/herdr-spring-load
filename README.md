@@ -11,10 +11,10 @@ at this time. Broader terminal and operating-system support is in development.
 
 | Feature or environment | Status |
 |---|---|
-| Tab switching in Ghostty on macOS | Working in user testing; calibration required |
+| Tab switching in Ghostty on macOS | Working in user testing, including native fullscreen; calibration required |
 | Pane focus in Ghostty on macOS | Working in user testing |
 | Space switching in the sidebar | Broken; work in progress |
-| macOS Terminal.app | Not working in user testing; work in progress |
+| macOS Terminal.app | Its window chrome is now recognised (it was rejected before); not yet confirmed with a real drag |
 | Warp and other macOS terminals | Work in progress; not supported |
 | Linux and Windows | Experimental implementation and automated tests exist; not supported for everyday use |
 
@@ -41,7 +41,8 @@ includes Ghostty to make the current compatibility clear.
 
 1. Run herdr alone in a Ghostty window, without Ghostty tabs or splits.
 2. Click a different **herdr tab** once, without dragging, to calibrate the
-   window. Repeat after changing the window size or terminal font size.
+   window. Resizing the window keeps the calibration; repeat it after changing
+   the terminal font size or entering native fullscreen.
 3. Drag a file from Finder into that window and keep holding the mouse button.
 4. Pause over a herdr tab label for about 0.6 seconds to switch tabs, or over a
    pane for about 0.25 seconds to focus it.
@@ -71,7 +72,11 @@ that is currently broken. Regenerate it with `python3 tools/make_demo.py`
   same-sized windows can prevent the helper from identifying the visible client.
   A single Kiro shell-integration PTY relay is recognised as one session.
 - **Calibration.** Tabs need a normal click on a different herdr tab before
-  drag switching can work. Calibration is stored per terminal and window size.
+  drag switching can work. In Ghostty a calibration carries over when only
+  the window size changes; a font change or native fullscreen needs a new one.
+  In native fullscreen the tab row under Ghostty's toolbar strip switches tabs
+  but never focuses panes, and the toolbar's window buttons and new-tab edge
+  are ignored.
 - **Layout uncertainty.** Overflowing tab rows, unknown geometry or config
   changes can disable targets. Sidebar git-state and layout checks can disable
   Space targets; resolving the Space failure remains work in progress.
@@ -132,7 +137,7 @@ table above is the compatibility guide for users.
 python3 -m unittest discover -s tests
 ```
 
-The latest local suite ran 222 tests with one opt-in integration test skipped.
+The latest local suite ran 242 tests with one opt-in integration test skipped.
 CI also exercises macOS, Ubuntu and Windows. Tests cover sensor contracts,
 geometry, calibration, focus selection and installation rollback. They do not
 establish support for real file drags in every terminal.

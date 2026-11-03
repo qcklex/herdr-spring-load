@@ -13,6 +13,10 @@ from pathlib import Path
 import tempfile
 
 MAX_SIDE_LEFTOVER_CELLS = 1.5
+# Terminal.app keeps a text inset and a scrollbar gutter beside the grid: 37
+# points at 120x30 with 7-point cells, over five columns. Chrome is a fixed
+# size, so the side allowance is whichever of the two is larger.
+MAX_SIDE_LEFTOVER_POINTS = 48
 MAX_TOP_LEFTOVER_ROWS = 6     # titlebar plus a native tab bar, plus padding
 SCALES = (1.0, 2.0, 3.0)
 GHOSTTY = 'com.mitchellh.ghostty'
@@ -96,7 +100,7 @@ def fit(bounds, client, scale_hint=None, whole_cells=False):
             cell_w = math.floor(grid_w * backing / cols) / backing or cell_w
             cell_h = math.floor(grid_h * backing / rows) / backing or cell_h
         left_w, left_h = width - grid_w, height - grid_h
-        if -0.5 <= left_w <= MAX_SIDE_LEFTOVER_CELLS * cell_w and -0.5 <= left_h <= MAX_TOP_LEFTOVER_ROWS * cell_h:
+        if -0.5 <= left_w <= max(MAX_SIDE_LEFTOVER_CELLS * cell_w, MAX_SIDE_LEFTOVER_POINTS) and -0.5 <= left_h <= MAX_TOP_LEFTOVER_ROWS * cell_h:
             fits.append(Grid(cols, rows, cell_w, cell_h, Interval(0, max(0, left_w)), Interval(0, max(0, left_h))))
     # Two scales fitting the same window means the unit is ambiguous: refuse.
     return fits[0] if len(fits) == 1 else None

@@ -235,8 +235,9 @@ allowed. A sensor that cannot see clicks without a permission omits the
 
 1. Validate `hello`, then wait for `drag_start`.
 2. For each `drag_move` with a window, pick the client: one local client
-   (by `argv`) whose grid fits `bounds` (section 2.2 of the design: leftover
-   of 1.5 cells or less, at scale 1 or `scale`) and that is in the
+   (by `argv`) whose grid fits `bounds` (section 2.2 of the design: side
+   leftover of 1.5 cells or 48 units, whichever is larger, at scale 1 or
+   `scale`) and that is in the
    foreground. If the window has a same-size peer, or more than one client
    fits, do nothing.
 3. Count the local clients attached to that session over all windows. Only
