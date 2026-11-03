@@ -24,19 +24,15 @@ terminal. The statuses above describe the current user-facing experience.
 
 ## Install
 
-Use Ghostty on macOS with herdr 0.9.3, Python 3.11 or newer, and Xcode Command
-Line Tools. Then run:
-
 ```sh
 herdr plugin install qcklex/herdr-spring-load
 ```
 
-Herdr shows an installation preview and asks for confirmation. Setup compiles
-the macOS sensor and installs a per-user background helper that starts at login.
-It does not request Accessibility, Automation or Screen Recording access.
+Or ask the coding agent running in herdr to install it for you:
 
-The repository and plugin ID remain `herdr-spring-load`; the display name
-includes Ghostty to make the current compatibility clear.
+> Install the herdr plugin qcklex/herdr-spring-load
+
+No Accessibility, Automation or Screen Recording permission is needed.
 
 ## Use it in Ghostty
 
