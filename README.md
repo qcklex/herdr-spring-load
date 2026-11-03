@@ -137,7 +137,7 @@ table above is the compatibility guide for users.
 python3 -m unittest discover -s tests
 ```
 
-The latest local suite ran 242 tests with one opt-in integration test skipped.
+The latest local suite ran 243 tests with one opt-in integration test skipped.
 CI also exercises macOS, Ubuntu and Windows. Tests cover sensor contracts,
 geometry, calibration, focus selection and installation rollback. They do not
 establish support for real file drags in every terminal.

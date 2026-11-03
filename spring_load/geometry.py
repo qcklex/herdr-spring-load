@@ -144,13 +144,14 @@ class Calibration:
         return sum(1 for key in self.data if self.entry(key)[0] is not None)
 
     def resized_origin(self, key, grid):
-        """Ghostty keeps its chrome and padding when only the window size
-        changes. Reuse precise observations only for the same measured chrome
-        budget and integer font metrics. Fullscreen, font/style changes and
-        contradictory observations require their own calibration.
+        """A terminal keeps its chrome and padding when only the window size
+        changes (Ghostty, and Terminal.app's inset and scrollbar gutter).
+        Reuse precise observations of the same app only for the same measured
+        chrome budget and integer font metrics. Fullscreen, font/style changes
+        and contradictory observations require their own calibration.
         """
         parts = key.split('|')
-        if len(parts) != 7 or parts[0] != GHOSTTY:
+        if len(parts) != 7:
             return None
         current, candidate = self.entry(key)
         if candidate is not None or (current is not None and current[1].width <= grid.cell_height / 2):
@@ -167,7 +168,7 @@ class Calibration:
                 continue
             try:
                 width,height,cols,rows,xpixel,ypixel = map(float,fields[1:])
-                old = fit((width,height),{'cols':cols,'rows':rows,'xpixel':xpixel,'ypixel':ypixel},whole_cells=True)
+                old = fit((width,height),{'cols':cols,'rows':rows,'xpixel':xpixel,'ypixel':ypixel},whole_cells=parts[0] == GHOSTTY)
             except (ValueError,TypeError,OverflowError):
                 continue
             if old is None or stored[1].width > old.cell_height / 2:

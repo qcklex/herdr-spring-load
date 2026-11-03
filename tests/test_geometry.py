@@ -49,6 +49,23 @@ class GeometryTest(unittest.TestCase):
             cal.data[key] = {'origin':[0,4,0,36], 'candidate':None}
             self.assertEqual(cal.apply(key,grid).origin_y,geometry.Interval(31,36))
 
+    def test_terminal_app_resize_reuses_its_calibration(self):
+        # Terminal.app measured at three sizes: 37 x 49 points of chrome each
+        # time while windowed, 37 x 17 in fullscreen.
+        with tempfile.TemporaryDirectory() as temp:
+            cal = geometry.Calibration(Path(temp)/'c.json')
+            app = 'com.apple.Terminal'
+            small = {'cols':120,'rows':30,'xpixel':840,'ypixel':450}
+            cal.data[geometry.calibration_key(app,(877,499),small)] = {'origin':[2,9,33,39], 'candidate':None}
+            large = {'cols':152,'rows':41,'xpixel':1064,'ypixel':615}
+            grid = geometry.fit((1101,664),large,2.0)
+            self.assertEqual(cal.apply(geometry.calibration_key(app,(1101,664),large),grid).origin_y,
+                             geometry.Interval(33,39))
+            full = {'cols':269,'rows':78,'xpixel':1883,'ypixel':1183}
+            grid = geometry.fit((1920,1200),full,2.0)
+            self.assertEqual(cal.apply(geometry.calibration_key(app,(1920,1200),full),grid),grid,
+                             'fullscreen has other chrome and needs its own calibration')
+
     def test_ghostty_resize_refuses_changed_chrome_fonts_and_conflicting_offsets(self):
         with tempfile.TemporaryDirectory() as temp:
             cal = geometry.Calibration(Path(temp)/'c.json')
