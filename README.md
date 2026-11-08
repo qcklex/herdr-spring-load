@@ -32,6 +32,8 @@ Or ask the coding agent running in herdr to install it for you:
 
 > Install the herdr plugin qcklex/herdr-spring-load
 
+Needs herdr 0.9.3 or newer, Python 3.11 or newer and, on macOS, the Xcode Command Line Tools (`xcode-select --install`).
+
 No Accessibility, Automation or Screen Recording permission is needed.
 
 ## Use it in Ghostty
