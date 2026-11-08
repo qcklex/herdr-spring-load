@@ -297,7 +297,10 @@ time.sleep(60)
             found = json.loads(self.run_sensor('--clients-for', str(owner.pid)).stdout)
             elapsed = time.monotonic() - started
             self.assertEqual(found['clients'], [])
-            self.assertLess(elapsed, 0.8, 'the 3 s tmux query did not hold up the lookup')
+            # The elapsed time includes starting the sensor process, which can take
+            # close to a second on a loaded Mac. The fake tmux blocks for 3 s, so any
+            # bound well under 3 s still proves the lookup did not wait for it.
+            self.assertLess(elapsed, 2.0, 'the 3 s tmux query held up the lookup (the bound allows for process start under load)')
         finally:
             os.killpg(owner.pid, 9)
             owner.wait()
